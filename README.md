@@ -1,4 +1,4 @@
-# devctx
+# dcell
 
 Development context manager combining:
 - **Git/JJ worktrees** - Isolated working copies
@@ -9,30 +9,30 @@ Development context manager combining:
 
 ```bash
 # Build from source
-git clone https://github.com/user/devctx
-cd devctx
-go build -o devctx ./cmd/devctx
-mv devctx ~/.local/bin/
+git clone https://github.com/heelune/dcell
+cd dcell
+go build -o dcell ./cmd/devctx
+mv dcell ~/.local/bin/
 ```
 
 ## Quick Start
 
 ```bash
 # Create a new context
-devctx create feature-x --from main
+dcell create feature-x --from main
 
 # List contexts
-devctx list
+dcell list
 
 # Switch to a context
-devctx switch feature-x
+dcell switch feature-x
 cd ../feature-x
 
 # Start AI assistant
-devctx ai
+dcell ai
 
 # Remove when done
-devctx remove feature-x
+dcell remove feature-x
 ```
 
 ## Features
@@ -53,7 +53,7 @@ devctx remove feature-x
 
 ## Configuration
 
-### Global config: `~/.config/devctx/config.toml`
+### Global config: `~/.config/dcell/config.toml`
 ```toml
 [vcs]
 prefer = "jj"  # "jj" or "git"
@@ -67,7 +67,7 @@ services = ["app", "db", "redis"]
 default = "claude"
 ```
 
-### Project config: `.devctx/config.toml`
+### Project config: `.dcell/config.toml`
 Project-specific overrides.
 
 ## Commands

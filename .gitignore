@@ -26,7 +26,7 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# devctx specific
-.devctx/
-.env.devctx*
-docker-compose.devctx.yml
+# dcell specific
+.dcell/
+.env.dcell*
+docker-compose.dcell.yml

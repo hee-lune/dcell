@@ -57,7 +57,7 @@ func Default() *Config {
 		},
 		AI: AIConfig{
 			Default:    "claude",
-			SessionDir: filepath.Join(home, ".config", "devctx", "sessions"),
+			SessionDir: filepath.Join(home, ".config", "dcell", "sessions"),
 		},
 		Hooks: HooksConfig{},
 	}
@@ -113,7 +113,7 @@ func (c *Config) SaveProject(projectPath string) error {
 // GlobalConfigPath returns the path to the global config file.
 func GlobalConfigPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "devctx", "config.toml")
+	return filepath.Join(home, ".config", "dcell", "config.toml")
 }
 
 // LoadGlobal loads the global configuration.

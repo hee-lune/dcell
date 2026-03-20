@@ -57,9 +57,9 @@ func (s *Store) Create(ctxName string, vcs string, ctxPath string) (*Session, er
 		VCS:         vcs,
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		ContextPath: filepath.Join(ctxPath, ".devctx-session", "context.md"),
-		TodoPath:    filepath.Join(ctxPath, ".devctx-session", "todo.md"),
-		DecisionsPath: filepath.Join(ctxPath, ".devctx-session", "decisions.md"),
+		ContextPath: filepath.Join(ctxPath, ".dcell-session", "context.md"),
+		TodoPath:    filepath.Join(ctxPath, ".dcell-session", "todo.md"),
+		DecisionsPath: filepath.Join(ctxPath, ".dcell-session", "decisions.md"),
 	}
 
 	// Create context files
@@ -167,7 +167,7 @@ func (s *Store) List() ([]Session, error) {
 }
 
 func (s *Store) createContextFile(path string, ctxName string) error {
-	content := fmt.Sprintf(`# Context: %s
+	content := fmt.Sprintf(`# dcell Context: %s
 
 ## Purpose
 <!-- Describe what you're working on in this context -->

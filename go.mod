@@ -1,4 +1,4 @@
-module github.com/user/devctx
+module github.com/heelune/dcell
 
 go 1.26.1
 

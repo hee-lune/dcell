@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/user/devctx/internal/config"
-	"github.com/user/devctx/internal/docker"
-	"github.com/user/devctx/internal/session"
-	"github.com/user/devctx/internal/vcs"
+	"github.com/heelune/dcell/internal/config"
+	"github.com/heelune/dcell/internal/docker"
+	"github.com/heelune/dcell/internal/session"
+	"github.com/heelune/dcell/internal/vcs"
 )
 
 var (
 	cfgFile string
 	rootCmd = &cobra.Command{
-		Use:   "devctx",
+		Use:   "dcell",
 		Short: "開発コンテキスト管理ツール",
-		Long: `devctx は開発コンテキストを管理するツールです：
+		Long: `dcell は開発コンテキスト（Development Cell）を管理するツールです：
 - Git/JJ worktree の管理
 - Docker環境のポート自動割り当て
 - AIアシスタントとのセッション管理`,
@@ -32,7 +32,7 @@ func main() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/devctx/config.toml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "設定ファイル（デフォルト: $HOME/.config/dcell/config.toml）")
 	
 	rootCmd.AddCommand(createCmd())
 	rootCmd.AddCommand(switchCmd())
