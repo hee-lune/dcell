@@ -337,8 +337,8 @@ func aiCmd() *cobra.Command {
 				projectRoot = repoPath
 			}
 			
-			// Get context path
-			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
+			// Get context path (flat structure: directly under project root)
+			ctxPath := filepath.Join(projectRoot, ctxName)
 			
 			// Load or create session
 			store := session.NewStore(projectRoot)

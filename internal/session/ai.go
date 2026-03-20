@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/heelune/dcell/internal/config"
+	"github.com/heelune/dcell/internal/devcontainer"
 )
 
 // AI defines the interface for AI assistants.
@@ -116,8 +117,25 @@ func (k *Kimi) IsAvailable() bool {
 }
 
 // Start starts a new Kimi session.
+// If Dev Container is configured, it runs kimi inside the container.
 func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
-	// Create agent spec files in .dcell-session/ (gitignored)
+	// Check if Dev Container is configured
+	if devcontainer.IsDevContainerConfigured(ctxPath) {
+		// Get project name for container naming
+		projectName := filepath.Base(filepath.Dir(ctxPath))
+		containerName := devcontainer.GetContainerName(projectName, session.ContextName)
+		
+		// Try to run AI in container
+		if err := devcontainer.RunAIInContainer(ctxPath, containerName, "kimi"); err == nil {
+			return nil
+		} else {
+			// Container execution failed, fall back to host mode
+			fmt.Fprintf(os.Stderr, "Warning: Failed to run in Dev Container: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Falling back to host mode...\n")
+		}
+	}
+
+	// Host mode: Create agent spec files in .dcell-session/
 	sessionDir := filepath.Dir(session.ContextPath) // .dcell-session/
 	agentPath := filepath.Join(sessionDir, "dcell-agent.yaml")
 	promptPath := filepath.Join(sessionDir, "system-prompt.md")
@@ -126,8 +144,8 @@ func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) er
 	globalDir := filepath.Dir(config.GlobalConfigPath())
 	globalCtxPath := filepath.Join(globalDir, "context.md")
 	
-	// Get project root from session path
-	projectRoot := filepath.Dir(filepath.Dir(ctxPath)) // worktrees/../ = project root
+	// Get project root from session path (flat structure)
+	projectRoot := filepath.Dir(ctxPath)
 	projectCtxPath := filepath.Join(projectRoot, ".context.md")
 	
 	// Ensure system prompt file exists
