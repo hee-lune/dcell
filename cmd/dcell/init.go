@@ -64,7 +64,8 @@ func initCmd() *cobra.Command {
 			// Use absolute paths to avoid issues
 			absProjectDir, _ := filepath.Abs(projectDir)
 			absBarePath := filepath.Join(absProjectDir, ".bare")
-			absMainPath := filepath.Join(absProjectDir, "main")
+			absWorktreesDir := filepath.Join(absProjectDir, "worktrees")
+			absMainPath := filepath.Join(absWorktreesDir, "main")
 
 			switch vcsType {
 			case "git":
@@ -129,6 +130,7 @@ func initCmd() *cobra.Command {
 			// Output summary
 			fmt.Printf("\nプロジェクト '%s' の準備ができました！\n", projectName)
 			fmt.Printf("  Bareリポジトリ: %s\n", absBarePath)
+			fmt.Printf("  Worktrees:      %s\n", absWorktreesDir)
 			fmt.Printf("  Main worktree:  %s\n", mainPath)
 
 			fmt.Printf("\n次のステップ:\n")

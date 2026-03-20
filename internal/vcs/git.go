@@ -91,7 +91,13 @@ func (g *Git) CreateContext(name string, base string) (*Context, error) {
 
 	// Get project root from .bare path
 	projectRoot := filepath.Dir(g.RepoPath)
-	ctxPath := filepath.Join(projectRoot, name)
+	worktreesDir := filepath.Join(projectRoot, "worktrees")
+	ctxPath := filepath.Join(worktreesDir, name)
+
+	// Ensure worktrees directory exists
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create worktrees directory: %w", err)
+	}
 
 	if base == "" {
 		base = "HEAD"
@@ -119,7 +125,7 @@ func (g *Git) SwitchContext(name string) error {
 	}
 
 	projectRoot := filepath.Dir(g.RepoPath)
-	ctxPath := filepath.Join(projectRoot, name)
+	ctxPath := filepath.Join(projectRoot, "worktrees", name)
 
 	// Verify it exists and is a valid git worktree
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
@@ -189,7 +195,7 @@ func (g *Git) RemoveContext(name string) error {
 	}
 
 	projectRoot := filepath.Dir(g.RepoPath)
-	ctxPath := filepath.Join(projectRoot, name)
+	ctxPath := filepath.Join(projectRoot, "worktrees", name)
 
 	cmd := exec.Command("git", "worktree", "remove", ctxPath)
 	cmd.Dir = g.RepoPath
@@ -262,7 +268,7 @@ func (g *Git) Clone(url string, dest string, branch string) error {
 }
 
 // InitBareProject initializes a bare repo project structure.
-// Creates: projectDir/.bare/, projectDir/main/, and initial commit
+// Creates: projectDir/.bare/, projectDir/worktrees/main/, and initial commit
 func (g *Git) InitBareProject(projectDir string) (string, error) {
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -309,8 +315,9 @@ func (g *Git) InitBareProject(projectDir string) (string, error) {
 		return "", fmt.Errorf("failed to push to bare repo: %w\n%s", err, out)
 	}
 
-	// Add main worktree
-	mainPath := filepath.Join(absProjectDir, "main")
+	// Add main worktree in worktrees/
+	worktreesDir := filepath.Join(absProjectDir, "worktrees")
+	mainPath := filepath.Join(worktreesDir, "main")
 	if err := g.AddMainWorktree(barePath, mainPath); err != nil {
 		return "", err
 	}
@@ -338,6 +345,11 @@ func (g *Git) CloneBare(url string, barePath string, branch string) error {
 
 // AddMainWorktree adds a main worktree to a bare repository.
 func (g *Git) AddMainWorktree(barePath string, mainPath string) error {
+	// Ensure parent directory (worktrees/) exists
+	if err := os.MkdirAll(filepath.Dir(mainPath), 0755); err != nil {
+		return fmt.Errorf("failed to create worktrees directory: %w", err)
+	}
+
 	// Ensure main directory exists
 	if err := os.MkdirAll(mainPath, 0755); err != nil {
 		return fmt.Errorf("failed to create main directory: %w", err)
