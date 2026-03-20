@@ -21,12 +21,11 @@ func initCmd() *cobra.Command {
 		Use:   "init <directory>",
 		Short: "新規プロジェクトを初期化（bareリポジトリ）",
 		Long: `新規プロジェクトをbareリポジトリとして初期化します。
-必ず .bare/ ディレクトリと main/ worktree を作成します。
+.bare/ ディレクトリと .dcell/ 設定のみ作成します（worktreeは作成しません）。
 
 作成される構造:
   my-project/
     .bare/          # bareリポジトリ
-    main/           # main worktree
     .dcell/         # dcell設定
 
 例:
@@ -58,45 +57,23 @@ func initCmd() *cobra.Command {
 				return fmt.Errorf("プロジェクトディレクトリの作成に失敗しました: %w", err)
 			}
 
-			var mainPath string
-			var err error
-
 			// Use absolute paths to avoid issues
 			absProjectDir, _ := filepath.Abs(projectDir)
 			absBarePath := filepath.Join(absProjectDir, ".bare")
-			absMainPath := filepath.Join(absProjectDir, "main")
 
 			switch vcsType {
 			case "git":
 				g := &vcs.Git{}
 				if cloneURL != "" {
-					// Clone mode: clone as bare then add main worktree
+					// Clone mode: clone as bare only (no worktree)
 					fmt.Printf("クローン中: %s\n", cloneURL)
 					if err := g.CloneBare(cloneURL, absBarePath, branch); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					// Add main worktree
-					mainPath = absMainPath
-					if err := g.AddMainWorktree(absBarePath, absMainPath); err != nil {
-						os.RemoveAll(projectDir)
-						return err
-					}
 				} else {
-					// Init mode: create bare repo with main worktree (flat structure)
-					// Create bare repository first
-					git := &vcs.Git{}
-					if err := git.Init(absBarePath, true); err != nil {
-						os.RemoveAll(projectDir)
-						return err
-					}
-					// Add main worktree directly under project root
-					mainPath = absMainPath
-					if err := git.AddMainWorktree(absBarePath, absMainPath); err != nil {
-						os.RemoveAll(projectDir)
-						return err
-					}
-					if err != nil {
+					// Init mode: create bare repo only (no worktree)
+					if err := g.Init(absBarePath, true); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
@@ -105,26 +82,15 @@ func initCmd() *cobra.Command {
 			case "jj":
 				j := &vcs.JJ{}
 				if cloneURL != "" {
+					// Clone mode: clone as bare only (no workspace)
 					fmt.Printf("クローン中: %s\n", cloneURL)
 					if err := j.CloneBare(cloneURL, absBarePath, branch); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					mainPath = absMainPath
-					if err := j.AddMainWorktree(absBarePath, absMainPath); err != nil {
-						os.RemoveAll(projectDir)
-						return err
-					}
 				} else {
-					// Init mode: create bare repo with main workspace (flat structure)
-					// Create bare git repo with jj
+					// Init mode: create bare repo only (no workspace)
 					if err := j.Init(absBarePath, true); err != nil {
-						os.RemoveAll(projectDir)
-						return err
-					}
-					// Add main workspace directly under project root
-					mainPath = absMainPath
-					if err := j.AddMainWorktree(absBarePath, absMainPath); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
@@ -137,7 +103,7 @@ func initCmd() *cobra.Command {
 
 			fmt.Printf("%s リポジトリを作成しました\n", vcsType)
 
-			// Create dcell config in project root (not in main/)
+			// Create dcell config in project root
 			cfg := config.Default()
 			cfg.VCS.Prefer = vcsType
 			if err := cfg.SaveProject(projectDir); err != nil {
@@ -147,11 +113,10 @@ func initCmd() *cobra.Command {
 			// Output summary
 			fmt.Printf("\nプロジェクト '%s' の準備ができました！\n", projectName)
 			fmt.Printf("  Bareリポジトリ: %s\n", absBarePath)
-			fmt.Printf("  Main worktree:  %s\n", mainPath)
 
 			fmt.Printf("\n次のステップ:\n")
-			fmt.Printf("  cd %s\n", mainPath)
-			fmt.Printf("  dcell create feature-x\n")
+			fmt.Printf("  cd %s\n", projectDir)
+			fmt.Printf("  dcell create <context-name>\n")
 
 			return nil
 		},

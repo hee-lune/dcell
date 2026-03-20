@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/heelune/dcell/internal/config"
+	"github.com/heelune/dcell/internal/session"
 	"github.com/heelune/dcell/internal/vcs"
 )
 
@@ -20,21 +23,22 @@ func migrateCmd() *cobra.Command {
 
 移行内容:
   - .git/ を .bare/ に移動
-  - 現在のディレクトリを main/ worktree として再構成
+  - 現在のブランチ名のディレクトリを worktree として作成
+  - セッションを作成
   - .dcell/config.toml を作成
 
 注意:
   この操作は破壊的変更です。移行前にバックアップを推奨します。
 
 例:
-  # 通常のgitリポジトリで実行
+  # 通常のgitリポジトリで実行（現在のブランチが 'main' の場合）
   cd my-project
   dcell migrate
 
   # 作成される構造:
   # my-project/
   #   .bare/       ← 元の.git/
-  #   main/        ← 現在の内容がここに移動
+  #   main/        ← 現在のブランチ名のworktree
   #   .dcell/      ← dcell設定`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			currentDir, err := os.Getwd()
@@ -55,6 +59,13 @@ func migrateCmd() *cobra.Command {
 
 			projectName := filepath.Base(currentDir)
 			fmt.Printf("'%s' をdcellプロジェクトに移行します...\n", projectName)
+
+			// Get current branch name before moving .git
+			currentBranch := getCurrentBranch(currentDir)
+			if currentBranch == "" {
+				currentBranch = "main" // fallback
+			}
+			fmt.Printf("現在のブランチ: %s\n", currentBranch)
 
 			// Determine VCS type
 			if vcsType == "" {
@@ -100,53 +111,53 @@ func migrateCmd() *cobra.Command {
 			fmt.Println(".git/ を .bare/ に移動中...")
 			if err := os.Rename(gitDir, barePath); err != nil {
 				// Rollback
-				rollbackMigrate(currentDir, tempDir)
+				rollbackMigrate(currentDir, tempDir, "")
 				return fmt.Errorf(".git/ の移動に失敗しました: %w", err)
 			}
 
-			// Create main worktree directly under project root (flat structure)
-			mainPath := filepath.Join(currentDir, "main")
-			fmt.Println("main/ ディレクトリを作成中...")
-			if err := os.MkdirAll(mainPath, 0755); err != nil {
-				rollbackMigrate(currentDir, tempDir)
-				return fmt.Errorf("main/ の作成に失敗しました: %w", err)
+			// Create worktree directory with current branch name
+			worktreePath := filepath.Join(currentDir, currentBranch)
+			fmt.Printf("%s/ ディレクトリを作成中...\n", currentBranch)
+			if err := os.MkdirAll(worktreePath, 0755); err != nil {
+				rollbackMigrate(currentDir, tempDir, "")
+				return fmt.Errorf("%s/ の作成に失敗しました: %w", currentBranch, err)
 			}
 
-			// Move contents from temp to main/
+			// Move contents from temp to worktree directory
 			entries, _ = os.ReadDir(tempDir)
 			for _, entry := range entries {
 				src := filepath.Join(tempDir, entry.Name())
-				dst := filepath.Join(mainPath, entry.Name())
+				dst := filepath.Join(worktreePath, entry.Name())
 				if err := os.Rename(src, dst); err != nil {
 					if err := copyDir(src, dst); err != nil {
-						rollbackMigrate(currentDir, tempDir)
+						rollbackMigrate(currentDir, tempDir, currentBranch)
 						return fmt.Errorf("ファイルの復元に失敗しました (%s): %w", entry.Name(), err)
 					}
 					os.RemoveAll(src)
 				}
 			}
 
-			// Add main as worktree
-			fmt.Println("main/ をworktreeとして登録中...")
+			// Add worktree
+			fmt.Printf("%s/ をworktreeとして登録中...\n", currentBranch)
 			switch vcsType {
 			case "git":
 				g := &vcs.Git{RepoPath: barePath}
-				// Update gitdir link in main/
-				if err := g.AddMainWorktree(barePath, mainPath); err != nil {
-					// If adding fails, the main worktree might already exist
+				// Update gitdir link in worktree
+				if err := g.AddMainWorktree(barePath, worktreePath); err != nil {
+					// If adding fails, the worktree might already exist
 					// Just continue
-					fmt.Printf("警告: main worktreeの登録で問題が発生しました: %v\n", err)
+					fmt.Printf("警告: worktreeの登録で問題が発生しました: %v\n", err)
 				}
 
 			case "jj":
 				j := &vcs.JJ{RepoPath: barePath}
 				// For JJ, we need to colocate
-				if err := j.AddMainWorktree(barePath, mainPath); err != nil {
-					fmt.Printf("警告: main workspaceの登録で問題が発生しました: %v\n", err)
+				if err := j.AddMainWorktree(barePath, worktreePath); err != nil {
+					fmt.Printf("警告: workspaceの登録で問題が発生しました: %v\n", err)
 				}
 
 			default:
-				rollbackMigrate(currentDir, tempDir)
+				rollbackMigrate(currentDir, tempDir, currentBranch)
 				return fmt.Errorf("不明なVCSタイプ: %s", vcsType)
 			}
 
@@ -157,14 +168,21 @@ func migrateCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "警告: 設定ファイルの作成に失敗しました: %v\n", err)
 			}
 
+			// Create session for the worktree
+			fmt.Printf("セッションを作成中...\n")
+			store := session.NewStore(currentDir)
+			if _, err := store.Create(currentBranch, vcsType, worktreePath); err != nil {
+				fmt.Fprintf(os.Stderr, "警告: セッションの作成に失敗しました: %v\n", err)
+			}
+
 			fmt.Printf("\n✅ 移行完了！\n")
 			fmt.Printf("\n新しい構造:\n")
 			fmt.Printf("  %s/\n", projectName)
 			fmt.Printf("    .bare/       ← bareリポジトリ\n")
-			fmt.Printf("    main/        ← 元の内容\n")
+			fmt.Printf("    %s/        ← 元の内容（%sブランチ）\n", currentBranch, currentBranch)
 			fmt.Printf("    .dcell/      ← dcell設定\n")
 			fmt.Printf("\n次のステップ:\n")
-			fmt.Printf("  cd main\n")
+			fmt.Printf("  cd %s\n", currentBranch)
 			fmt.Printf("  dcell create feature-x\n")
 
 			return nil
@@ -177,7 +195,7 @@ func migrateCmd() *cobra.Command {
 }
 
 // rollbackMigrate attempts to restore the original state on failure
-func rollbackMigrate(currentDir, tempDir string) {
+func rollbackMigrate(currentDir, tempDir string, worktreeName string) {
 	fmt.Println("エラーが発生したため、ロールバックを試みます...")
 
 	// Move .git back if it exists
@@ -195,11 +213,24 @@ func rollbackMigrate(currentDir, tempDir string) {
 		os.Rename(src, dst)
 	}
 
-	// Remove main/ if it exists (for rollback)
-	mainPath := filepath.Join(currentDir, "main")
-	os.RemoveAll(mainPath)
+	// Remove worktree directory if it exists (for rollback)
+	if worktreeName != "" {
+		worktreePath := filepath.Join(currentDir, worktreeName)
+		os.RemoveAll(worktreePath)
+	}
 
 	fmt.Println("ロールバック完了。手動での確認を推奨します。")
+}
+
+// getCurrentBranch returns the current git branch name
+func getCurrentBranch(dir string) string {
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // copyDir copies a directory recursively
