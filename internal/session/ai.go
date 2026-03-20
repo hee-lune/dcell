@@ -164,6 +164,22 @@ func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) er
 	return cmd.Wait()
 }
 
+// Continue continues an existing Kimi session.
+func (k *Kimi) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
+	return k.Start(ctxPath, session, loader)
+}
+
+// Execute sends a one-off command to Kimi.
+func (k *Kimi) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
+	cmd := exec.Command("kimi", "-c", prompt)
+	cmd.Dir = ctxPath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
 // Codex implements AI interface for OpenAI Codex CLI.
 type Codex struct{}
 
