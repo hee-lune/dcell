@@ -1,62 +1,84 @@
 # dcell
 
-Development context manager combining:
-- **Git/JJ worktrees** - Isolated working copies
-- **Docker environments** - Port-mapped, isolated services
-- **AI sessions** - Context-aware AI assistant integration
+開発コンテキスト（Development Cell）管理ツール
 
-## Installation
+- **Git/JJ worktree** - 独立した作業コピーの管理
+- **Docker環境** - ポート自動割り当て、分離されたサービス
+- **AIセッション** - コンテキスト認識型AIアシスタント連携
+
+## インストール
 
 ```bash
-# Build from source
+# ソースからビルド
 git clone https://github.com/heelune/dcell
 cd dcell
 go build -o dcell ./cmd/dcell
 mv dcell ~/.local/bin/
 ```
 
-## Quick Start
+## クイックスタート
+
+### 新規プロジェクトの作成
 
 ```bash
-# Create a new context
+# 新規プロジェクトを初期化
+dcell init my-project
+cd my-project
+
+# またはbareリポジトリとして作成
+dcell init my-project --bare
+cd my-project/main
+
+# 既存リポジトリをクローン
+dcell init my-project --clone https://github.com/user/repo.git
+```
+
+### コンテキストの管理
+
+```bash
+# 新しい開発コンテキストを作成
 dcell create feature-x --from main
 
-# List contexts
+# コンテキスト一覧を表示
 dcell list
 
-# Switch to a context
+# コンテキストに切り替え
 dcell switch feature-x
 cd ../feature-x
 
-# Start AI assistant
+# AIアシスタントを起動
 dcell ai
 
-# Remove when done
+# 使用後に削除
 dcell remove feature-x
 ```
 
-## Features
+## 機能
 
-### VCS Support
-- **Jujutsu (jj)** - Native workspace support
-- **Git** - Worktree support with automatic fallback
+### VCS対応
 
-### Docker Integration
-- Automatic port allocation (prevents conflicts)
-- Auto-generated `docker-compose.dcell.yml`
-- Per-context `.env.dcell` with database URLs
+- **Jujutsu (jj)** - ネイティブワークスペースサポート
+- **Git** - Worktreeサポート、自動フォールバック
 
-### AI Session Management
-- Per-context session storage
-- `context.md`, `todo.md`, `decisions.md` auto-created
-- Claude Code and Kimi CLI support
+### Docker連携
 
-## Configuration
+- 自動ポート割り当て（競合防止）
+- `docker-compose.dcell.yml` 自動生成
+- コンテキストごとの `.env.dcell`（データベースURL等）
 
-### Global config: `~/.config/dcell/config.toml`
+### AIセッション管理
+
+- コンテキストごとのセッション保存
+- `context.md`, `todo.md`, `decisions.md` 自動作成
+- Claude Code / Kimi CLI 対応
+
+## 設定
+
+### グローバル設定: `~/.config/dcell/config.toml`
+
 ```toml
 [vcs]
-prefer = "jj"  # "jj" or "git"
+prefer = "jj"  # "jj" または "git"
 
 [docker]
 port_base = 3000
@@ -64,22 +86,43 @@ port_step = 10
 services = ["app", "db", "redis"]
 
 [ai]
-default = "claude"
+default = "claude"  # "claude" または "kimi"
 ```
 
-### Project config: `.dcell/config.toml`
-Project-specific overrides.
+### プロジェクト設定: `.dcell/config.toml`
 
-## Commands
+プロジェクト固有の設定を上書きできます。
 
-| Command | Description |
-|---------|-------------|
-| `create <name>` | Create new context |
-| `switch <name>` | Switch to context |
-| `list` | List all contexts |
-| `remove <name>` | Remove context |
-| `ai [name]` | Start AI assistant |
+## コマンド一覧
 
-## License
+| コマンド | 説明 |
+|---------|------|
+| `init <dir>` | 新規プロジェクトを初期化 |
+| `create <name>` | 新しい開発コンテキストを作成 |
+| `switch <name>` | 開発コンテキストに切り替え |
+| `list` | 開発コンテキストの一覧表示 |
+| `remove <name>` | 開発コンテキストを削除 |
+| `ai [name]` | AIアシスタントを起動 |
+
+### init コマンド
+
+```bash
+# 新規ローカルリポジトリを作成
+dcell init my-project
+
+# bareリポジトリとして作成（main worktree自動作成）
+dcell init my-project --bare
+
+# 既存リポジトリをクローン
+dcell init my-project --clone https://github.com/user/repo.git
+
+# 特定ブランチをクローン
+dcell init my-project --clone https://github.com/user/repo.git --branch develop
+
+# Jujutsuを使用
+dcell init my-project --vcs jj
+```
+
+## ライセンス
 
 MIT
