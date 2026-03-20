@@ -83,7 +83,7 @@ func (g *Git) DetectBare(startPath string) (string, error) {
 	return "", fmt.Errorf("no .bare directory found in %s or its parents", startPath)
 }
 
-// CreateContext creates a new git worktree.
+// CreateContext creates a new git worktree with a new branch.
 func (g *Git) CreateContext(name string, base string) (*Context, error) {
 	if g.RepoPath == "" {
 		return nil, fmt.Errorf("repository not detected")
@@ -97,24 +97,17 @@ func (g *Git) CreateContext(name string, base string) (*Context, error) {
 		base = "HEAD"
 	}
 
-	cmd := exec.Command("git", "worktree", "add", ctxPath, base)
+	// Create new branch and worktree: git worktree add -b <name> <path> <base>
+	cmd := exec.Command("git", "worktree", "add", "-b", name, ctxPath, base)
 	cmd.Dir = g.RepoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to create git worktree: %w\n%s", err, out)
 	}
 
-	// Try to get the branch name
-	branch := base
-	if base == "HEAD" {
-		if b, err := g.getCurrentBranch(ctxPath); err == nil {
-			branch = b
-		}
-	}
-
 	return &Context{
 		Name:       name,
 		Path:       ctxPath,
-		BaseBranch: branch,
+		BaseBranch: base,
 		VCS:        "git",
 	}, nil
 }
