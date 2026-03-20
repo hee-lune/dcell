@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -133,14 +134,34 @@ func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) er
 		}
 	}
 
-	// Kimi doesn't have a direct prompt flag, so we'll use -c flag
-	cmd := exec.Command("kimi", "-c", contextContent)
+	// Start kimi in interactive mode
+	cmd := exec.Command("kimi")
 	cmd.Dir = ctxPath
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	// Create pipe for stdin to send context first, then user input
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start kimi: %w", err)
+	}
+
+	// Send context as first input in a goroutine
+	go func() {
+		defer stdin.Close()
+		// Send context
+		io.WriteString(stdin, contextContent)
+		io.WriteString(stdin, "\n\n上記は現在のプロジェクトのコンテキストです。開発を続けてください。\n\n")
+		// Then copy user input
+		io.Copy(stdin, os.Stdin)
+	}()
+
+	return cmd.Wait()
 }
 
 // Continue continues an existing Kimi session.
