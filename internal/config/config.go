@@ -1,4 +1,4 @@
-// Package config manages devctx configuration.
+// Package config manages dcell configuration.
 package config
 
 import (
@@ -9,7 +9,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config represents the devctx configuration.
+// Config represents the dcell configuration.
 type Config struct {
 	VCS    VCSConfig    `toml:"vcs"`
 	Docker DockerConfig `toml:"docker"`
@@ -80,7 +80,7 @@ func Load(path string) (*Config, error) {
 
 // LoadProject loads project-specific configuration.
 func LoadProject(projectPath string) (*Config, error) {
-	configPath := filepath.Join(projectPath, ".devctx", "config.toml")
+	configPath := filepath.Join(projectPath, ".dcell", "config.toml")
 	return Load(configPath)
 }
 
@@ -106,7 +106,7 @@ func (c *Config) Save(path string) error {
 
 // SaveProject saves project-specific configuration.
 func (c *Config) SaveProject(projectPath string) error {
-	configPath := filepath.Join(projectPath, ".devctx", "config.toml")
+	configPath := filepath.Join(projectPath, ".dcell", "config.toml")
 	return c.Save(configPath)
 }
 

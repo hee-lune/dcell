@@ -11,7 +11,7 @@ Development context manager combining:
 # Build from source
 git clone https://github.com/heelune/dcell
 cd dcell
-go build -o dcell ./cmd/devctx
+go build -o dcell ./cmd/dcell
 mv dcell ~/.local/bin/
 ```
 
@@ -43,8 +43,8 @@ dcell remove feature-x
 
 ### Docker Integration
 - Automatic port allocation (prevents conflicts)
-- Auto-generated `docker-compose.devctx.yml`
-- Per-context `.env.devctx` with database URLs
+- Auto-generated `docker-compose.dcell.yml`
+- Per-context `.env.dcell` with database URLs
 
 ### AI Session Management
 - Per-context session storage

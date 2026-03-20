@@ -43,7 +43,7 @@ func (c *Claude) Start(ctxPath string, session *Session) error {
 	}
 
 	// Write a temporary file with context
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("devctx-%s-prompt.txt", session.ContextName))
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-%s-prompt.txt", session.ContextName))
 	if err := os.WriteFile(tmpFile, []byte(contextContent), 0644); err != nil {
 		return fmt.Errorf("failed to write prompt file: %w", err)
 	}

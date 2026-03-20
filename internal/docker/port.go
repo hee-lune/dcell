@@ -66,7 +66,7 @@ type PortState struct {
 
 // LoadPortState loads the port state from disk.
 func LoadPortState(projectPath string) (*PortState, error) {
-	statePath := filepath.Join(projectPath, ".devctx", "dcell-ports.json")
+	statePath := filepath.Join(projectPath, ".dcell", "ports.json")
 	state := &PortState{
 		Contexts: make(map[string]int),
 	}
@@ -99,7 +99,7 @@ func LoadPortState(projectPath string) (*PortState, error) {
 
 // Save saves the port state to disk.
 func (ps *PortState) Save(projectPath string) error {
-	statePath := filepath.Join(projectPath, ".devctx", "ports.json")
+	statePath := filepath.Join(projectPath, ".dcell", "ports.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0755); err != nil {
 		return err
 	}

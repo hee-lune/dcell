@@ -103,7 +103,7 @@ func createCmd() *cobra.Command {
 
 			fmt.Printf("コンテキスト '%s' の準備ができました！\n", ctxName)
 			fmt.Printf("  パス: %s\n", ctx.Path)
-			fmt.Printf("  切り替え: devctx switch %s\n", ctxName)
+			fmt.Printf("  切り替え: dcell switch %s\n", ctxName)
 
 			return nil
 		},
@@ -274,11 +274,11 @@ func aiCmd() *cobra.Command {
 				// Try to get current context from directory
 				v, err := vcs.NewAuto(repoPath)
 				if err != nil {
-					return fmt.Errorf("no context specified and not in a devctx: %w", err)
+					return fmt.Errorf("no context specified and not in a dcell: %w", err)
 				}
 				current, err := v.CurrentContext()
 				if err != nil {
-					return fmt.Errorf("no context specified and not in a devctx: %w", err)
+					return fmt.Errorf("no context specified and not in a dcell: %w", err)
 				}
 				ctxName = current.Name
 			}
