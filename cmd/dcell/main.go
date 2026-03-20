@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/heelune/dcell/internal/config"
+	"github.com/heelune/dcell/internal/devcontainer"
 	"github.com/heelune/dcell/internal/docker"
 	"github.com/heelune/dcell/internal/session"
 	"github.com/heelune/dcell/internal/vcs"
@@ -41,11 +42,16 @@ func init() {
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
+	rootCmd.AddCommand(devcontainerCmd())
+	rootCmd.AddCommand(snapshotCmd())
 }
 
 func createCmd() *cobra.Command {
-	var from string
-	var vcsType string
+	var (
+		from        string
+		vcsType     string
+		devcontainerFlag bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -102,6 +108,13 @@ func createCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Warning: Docker setup failed: %v\n", err)
 			}
 
+			// Setup Dev Container if requested
+			if devcontainerFlag {
+				if err := setupDevContainer(repoPath, ctxName, cfg); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Dev Container setup failed: %v\n", err)
+				}
+			}
+
 			// Create AI session
 			store := session.NewStore(cfg.AI.SessionDir)
 			if _, err := store.Create(ctxName, ctx.VCS, ctx.Path); err != nil {
@@ -118,6 +131,7 @@ func createCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&from, "from", "f", "", "ベースとなるブランチ/リビジョン")
 	cmd.Flags().StringVar(&vcsType, "vcs", "auto", "VCSタイプ (jj, git, auto)")
+	cmd.Flags().BoolVar(&devcontainerFlag, "devcontainer", false, "Dev Container設定も生成")
 
 	return cmd
 }
@@ -238,6 +252,11 @@ func removeCmd() *cobra.Command {
 			// Cleanup Docker
 			composeMgr := docker.NewComposeManager(repoPath)
 			composeMgr.Cleanup(ctxName)
+
+			// Cleanup Dev Container
+			projectName := filepath.Base(repoPath)
+			dcGenerator := devcontainer.NewGenerator(projectName, repoPath)
+			dcGenerator.Cleanup(ctxName)
 
 			// Remove VCS context
 			if err := v.RemoveContext(ctxName); err != nil {
@@ -367,5 +386,37 @@ func setupDocker(repoPath string, ctxName string, cfg *config.Config) error {
 		return err
 	}
 
+	return nil
+}
+
+func setupDevContainer(repoPath string, ctxName string, cfg *config.Config) error {
+	// Load port state
+	portState, err := docker.LoadPortState(repoPath)
+	if err != nil {
+		return err
+	}
+
+	// Get port index for context
+	idx := portState.GetIndex(ctxName)
+	if idx < 0 {
+		// Allocate new if not exists
+		idx = portState.Allocate(ctxName)
+		if err := portState.Save(repoPath); err != nil {
+			return err
+		}
+	}
+
+	// Get ports
+	pm := docker.NewPortManager(cfg.Docker.PortBase, cfg.Docker.PortStep)
+	ports := pm.GetPorts(idx)
+
+	// Generate devcontainer config
+	projectName := filepath.Base(repoPath)
+	generator := devcontainer.NewGenerator(projectName, repoPath)
+	if err := generator.GenerateForWorktree(ctxName, "app", ports); err != nil {
+		return err
+	}
+
+	fmt.Printf("  Dev Container設定を作成しました: %s/../%s/.devcontainer/devcontainer.json\n", repoPath, ctxName)
 	return nil
 }

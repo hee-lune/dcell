@@ -112,14 +112,37 @@ func (k *Kimi) Start(ctxPath string, session *Session) error {
 		contextContent += string(data) + "\n\n"
 	}
 
-	// Kimi doesn't have a direct prompt flag, so we'll use -c flag
-	cmd := exec.Command("kimi", "-c", contextContent)
+	// Start kimi in interactive mode
+	cmd := exec.Command("kimi")
 	cmd.Dir = ctxPath
-	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	// Create pipe for stdin
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start kimi: %w", err)
+	}
+
+	// Send context first, then relay user input
+	go func() {
+		// Send context as initial input
+		io.WriteString(stdin, contextContent)
+		io.WriteString(stdin, "\n\n上記は現在のプロジェクトのコンテキストです。開発を続けてください。\n\n")
+		
+		// Relay user input from os.Stdin
+		io.Copy(stdin, os.Stdin)
+		
+		// Close stdin only when user input ends (Ctrl+D) or process exits
+		stdin.Close()
+	}()
+
+	return cmd.Wait()
 }
 
 // Continue continues an existing Kimi session.

@@ -138,6 +138,14 @@ func (ps *PortState) Release(name string) {
 	delete(ps.Contexts, name)
 }
 
+// GetIndex returns the port index for a context, or -1 if not allocated.
+func (ps *PortState) GetIndex(name string) int {
+	if idx, ok := ps.Contexts[name]; ok {
+		return idx
+	}
+	return -1
+}
+
 func splitLines(s string) []string {
 	var lines []string
 	start := 0

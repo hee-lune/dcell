@@ -5,6 +5,8 @@
 - **Git/JJ worktree** - 独立した作業コピーの管理
 - **Docker環境** - ポート自動割り当て、分離されたサービス
 - **AIセッション** - コンテキスト認識型AIアシスタント連携
+- **Dev Container** - VS Code Dev Container対応
+- **スナップショット** - DBとファイルの状態保存・復元
 
 ## インストール
 
@@ -72,6 +74,18 @@ dcell remove feature-x
 - `context.md`, `todo.md`, `decisions.md` 自動作成
 - Claude Code / Kimi CLI 対応
 
+### Dev Container連携
+
+- `.devcontainer/devcontainer.json` 自動生成
+- worktreeごとに独立したDev Container設定
+- VS Codeでの「コンテナで再度開く」対応
+
+### スナップショット機能
+
+- DB状態の保存・復元（PostgreSQL対応）
+- ファイル変更の保存・復元
+- ブランチ・コミット情報の記録
+
 ## 設定
 
 ### グローバル設定: `~/.config/dcell/config.toml`
@@ -98,12 +112,16 @@ default = "claude"  # "claude" または "kimi"
 
 | コマンド | 説明 |
 |---------|------|
+| コマンド | 説明 |
+|---------|------|
 | `init <dir>` | 新規プロジェクトを初期化 |
 | `create <name>` | 新しい開発コンテキストを作成 |
 | `switch <name>` | 開発コンテキストに切り替え |
 | `list` | 開発コンテキストの一覧表示 |
 | `remove <name>` | 開発コンテキストを削除 |
 | `ai [name]` | AIアシスタントを起動 |
+| `devcontainer` | Dev Container設定の管理 |
+| `snapshot` | スナップショットの管理 |
 
 ### init コマンド
 
