@@ -1,0 +1,13 @@
+[tools]
+go = "latest"
+
+[env]
+GOPROXY = "https://proxy.golang.org,direct"
+GOSUMDB = "sum.golang.org"
+
+[tasks]
+build = "go build -o bin/devctx ./cmd/devctx"
+dev = "go run ./cmd/devctx"
+test = "go test ./..."
+lint = "golangci-lint run"
+fmt = "go fmt ./..."

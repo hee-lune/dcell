@@ -1,0 +1,226 @@
+package session
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/BurntSushi/toml"
+)
+
+// Session represents an AI session for a context.
+type Session struct {
+	ContextName string    `toml:"context_name"`
+	VCS         string    `toml:"vcs"`
+	CreatedAt   time.Time `toml:"created_at"`
+	UpdatedAt   time.Time `toml:"updated_at"`
+	
+	// Context files
+	ContextPath string `toml:"context_path"`  // path to context.md
+	TodoPath    string `toml:"todo_path"`     // path to todo.md
+	DecisionsPath string `toml:"decisions_path"` // path to decisions.md
+	
+	// Session state
+	LastAIInteraction time.Time `toml:"last_ai_interaction"`
+	TaskCount         int       `toml:"task_count"`
+	CompletedTasks    int       `toml:"completed_tasks"`
+}
+
+// Store manages session storage.
+type Store struct {
+	BaseDir string
+}
+
+// NewStore creates a new session store.
+func NewStore(baseDir string) *Store {
+	return &Store{
+		BaseDir: baseDir,
+	}
+}
+
+// GetSessionDir returns the directory for a context's session.
+func (s *Store) GetSessionDir(ctxName string) string {
+	return filepath.Join(s.BaseDir, ctxName)
+}
+
+// Create creates a new session for a context.
+func (s *Store) Create(ctxName string, vcs string, ctxPath string) (*Session, error) {
+	sessionDir := s.GetSessionDir(ctxName)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	now := time.Now()
+	session := &Session{
+		ContextName: ctxName,
+		VCS:         vcs,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		ContextPath: filepath.Join(ctxPath, ".devctx-session", "context.md"),
+		TodoPath:    filepath.Join(ctxPath, ".devctx-session", "todo.md"),
+		DecisionsPath: filepath.Join(ctxPath, ".devctx-session", "decisions.md"),
+	}
+
+	// Create context files
+	if err := os.MkdirAll(filepath.Dir(session.ContextPath), 0755); err != nil {
+		return nil, err
+	}
+
+	// Create initial context.md
+	if err := s.createContextFile(session.ContextPath, ctxName); err != nil {
+		return nil, err
+	}
+
+	// Create initial todo.md
+	if err := s.createTodoFile(session.TodoPath); err != nil {
+		return nil, err
+	}
+
+	// Create initial decisions.md
+	if err := s.createDecisionsFile(session.DecisionsPath); err != nil {
+		return nil, err
+	}
+
+	// Save session metadata
+	if err := s.Save(session); err != nil {
+		return nil, err
+	}
+
+	return session, nil
+}
+
+// Load loads a session for a context.
+func (s *Store) Load(ctxName string) (*Session, error) {
+	sessionFile := filepath.Join(s.GetSessionDir(ctxName), "session.toml")
+	
+	var session Session
+	if _, err := toml.DecodeFile(sessionFile, &session); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("session not found for context: %s", ctxName)
+		}
+		return nil, fmt.Errorf("failed to load session: %w", err)
+	}
+
+	return &session, nil
+}
+
+// Save saves a session.
+func (s *Store) Save(session *Session) error {
+	sessionDir := s.GetSessionDir(session.ContextName)
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	sessionFile := filepath.Join(sessionDir, "session.toml")
+	f, err := os.Create(sessionFile)
+	if err != nil {
+		return fmt.Errorf("failed to create session file: %w", err)
+	}
+	defer f.Close()
+
+	enc := toml.NewEncoder(f)
+	if err := enc.Encode(session); err != nil {
+		return fmt.Errorf("failed to encode session: %w", err)
+	}
+
+	return nil
+}
+
+// Update updates the session timestamp.
+func (s *Store) Update(ctxName string) error {
+	session, err := s.Load(ctxName)
+	if err != nil {
+		return err
+	}
+
+	session.UpdatedAt = time.Now()
+	return s.Save(session)
+}
+
+// Remove removes a session.
+func (s *Store) Remove(ctxName string) error {
+	sessionDir := s.GetSessionDir(ctxName)
+	return os.RemoveAll(sessionDir)
+}
+
+// List lists all sessions.
+func (s *Store) List() ([]Session, error) {
+	entries, err := os.ReadDir(s.BaseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Session{}, nil
+		}
+		return nil, err
+	}
+
+	var sessions []Session
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if session, err := s.Load(entry.Name()); err == nil {
+				sessions = append(sessions, *session)
+			}
+		}
+	}
+
+	return sessions, nil
+}
+
+func (s *Store) createContextFile(path string, ctxName string) error {
+	content := fmt.Sprintf(`# Context: %s
+
+## Purpose
+<!-- Describe what you're working on in this context -->
+
+## Goals
+- [ ] 
+
+## Constraints
+<!-- Any limitations or requirements -->
+
+## References
+<!-- Links to relevant issues, PRs, docs -->
+`, ctxName)
+
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func (s *Store) createTodoFile(path string) error {
+	content := `# Todo
+
+## In Progress
+- [ ] 
+
+## Pending
+- [ ] 
+
+## Completed
+- [x] Session initialized
+
+## Notes
+<!-- Additional notes -->
+`
+
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func (s *Store) createDecisionsFile(path string) error {
+	content := `# Decisions
+
+## Architecture Decisions
+
+### ADR-001: 
+**Status:** Proposed | Accepted | Deprecated
+
+**Context:**
+
+**Decision:**
+
+**Consequences:**
+
+## Technical Notes
+<!-- Implementation details, lessons learned -->
+`
+
+	return os.WriteFile(path, []byte(content), 0644)
+}
