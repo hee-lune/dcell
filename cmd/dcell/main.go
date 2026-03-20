@@ -337,15 +337,20 @@ func aiCmd() *cobra.Command {
 				projectRoot = repoPath
 			}
 			
-			// Load session
+			// Get context path
+			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
+			
+			// Load or create session
 			store := session.NewStore(projectRoot)
 			sess, err := store.Load(ctxName)
 			if err != nil {
-				return err
+				// Session doesn't exist, create it
+				fmt.Printf("セッション '%s' を新規作成します...\n", ctxName)
+				sess, err = store.Create(ctxName, v.Name(), ctxPath)
+				if err != nil {
+					return fmt.Errorf("failed to create session: %w", err)
+				}
 			}
-			// ctxName may contain "/" (e.g., "feature/devcontainer")
-			// worktree path uses the original branch name as-is
-			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
 			
 			// Create context loader for layered context
 			globalDir := filepath.Dir(config.GlobalConfigPath())
