@@ -7,7 +7,7 @@ GOSUMDB = "sum.golang.org"
 
 [tasks]
 build = "go build -o bin/dcell ./cmd/dcell"
-dev = "go run ./cmd/devctx"
+dev = "go run ./cmd/dcell"
 test = "go test ./..."
 lint = "golangci-lint run"
 fmt = "go fmt ./..."
