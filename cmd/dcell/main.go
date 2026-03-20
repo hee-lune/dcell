@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -45,6 +46,7 @@ func init() {
 	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(devcontainerCmd())
 	rootCmd.AddCommand(snapshotCmd())
+	rootCmd.AddCommand(composeCmd())
 }
 
 func createCmd() *cobra.Command {
@@ -468,4 +470,69 @@ func setupDevContainer(repoPath string, ctxName string, cfg *config.Config) erro
 
 	fmt.Printf("  Dev Container設定を作成しました: %s/../%s/.devcontainer/devcontainer.json\n", repoPath, ctxName)
 	return nil
+}
+
+func composeCmd() *cobra.Command {
+	var ctxName string
+
+	cmd := &cobra.Command{
+		Use:                "compose [flags] [docker-compose-args...]",
+		Short:              "docker compose のラッパー（dcell設定自動適用）",
+		DisableFlagParsing: false,
+		Args:               cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoPath, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			// Detect VCS
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return fmt.Errorf("failed to detect repository: %w", err)
+			}
+
+			// Get project root
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+
+			// Determine context name and path
+			var ctxPath string
+			if ctxName != "" {
+				// Context specified explicitly
+				ctxPath = filepath.Join(projectRoot, ctxName)
+			} else {
+				// Try to get current context from directory
+				current, err := v.CurrentContext()
+				if err != nil {
+					return fmt.Errorf("no context specified and not in a dcell context: %w", err)
+				}
+				ctxName = current.Name
+				ctxPath = current.Path
+			}
+
+			// Check if context exists
+			if _, err := os.Stat(ctxPath); os.IsNotExist(err) {
+				return fmt.Errorf("context '%s' not found at %s", ctxName, ctxPath)
+			}
+
+			// Build docker compose command with dcell override
+			dockerArgs := []string{"compose", "-f", "docker-compose.yml", "-f", "docker-compose.dcell.yml"}
+			dockerArgs = append(dockerArgs, args...)
+
+			execCmd := exec.Command("docker", dockerArgs...)
+			execCmd.Dir = ctxPath
+			execCmd.Stdin = os.Stdin
+			execCmd.Stdout = os.Stdout
+			execCmd.Stderr = os.Stderr
+
+			return execCmd.Run()
+		},
+	}
+
+	cmd.Flags().StringVarP(&ctxName, "context", "c", "", "コンテキスト名（指定しない場合はカレントディレクトリから推定）")
+
+	return cmd
 }
