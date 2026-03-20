@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // AI defines the interface for AI assistants.
@@ -42,8 +43,9 @@ func (c *Claude) Start(ctxPath string, session *Session) error {
 		contextContent += string(data) + "\n\n"
 	}
 
-	// Write a temporary file with context
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-%s-prompt.txt", session.ContextName))
+	// Write a temporary file with context (sanitize filename)
+	safeName := strings.ReplaceAll(session.ContextName, "/", "-")
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-%s-prompt.txt", safeName))
 	if err := os.WriteFile(tmpFile, []byte(contextContent), 0644); err != nil {
 		return fmt.Errorf("failed to write prompt file: %w", err)
 	}
