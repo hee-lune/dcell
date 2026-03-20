@@ -117,7 +117,11 @@ func createCmd() *cobra.Command {
 			}
 
 			// Create AI session
-			store := session.NewStore(cfg.AI.SessionDir)
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			store := session.NewStore(projectRoot)
 			if _, err := store.Create(ctxName, ctx.VCS, ctx.Path); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Session creation failed: %v\n", err)
 			}
@@ -145,11 +149,6 @@ func switchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctxName := args[0]
 
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			repoPath, err := os.Getwd()
 			if err != nil {
 				return err
@@ -168,7 +167,11 @@ func switchCmd() *cobra.Command {
 			}
 
 			// Update session
-			store := session.NewStore(cfg.AI.SessionDir)
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			store := session.NewStore(projectRoot)
 			if err := store.Update(ctxName); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Session update failed: %v\n", err)
 			}
@@ -233,11 +236,6 @@ func removeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctxName := args[0]
 
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			repoPath, err := os.Getwd()
 			if err != nil {
 				return err
@@ -265,7 +263,11 @@ func removeCmd() *cobra.Command {
 			}
 
 			// Remove session
-			store := session.NewStore(cfg.AI.SessionDir)
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			store := session.NewStore(projectRoot)
 			store.Remove(ctxName)
 
 			fmt.Printf("コンテキスト '%s' を削除しました。\n", ctxName)
@@ -323,33 +325,24 @@ func aiCmd() *cobra.Command {
 				}
 			}
 
-			// Load session
-			store := session.NewStore(cfg.AI.SessionDir)
-			sess, err := store.Load(ctxName)
-			if err != nil {
-				return err
-			}
-
 			// Find .bare directory and construct ctxPath
 			v, err := vcs.NewAuto(repoPath)
 			if err != nil {
 				return fmt.Errorf("failed to detect repository: %w", err)
 			}
 			
-			// Get project root from .bare path
-			var barePath string
-			switch typedV := v.(type) {
-			case *vcs.Git:
-				barePath = typedV.RepoPath
-			case *vcs.JJ:
-				barePath = typedV.RepoPath
+			// Get project root
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
 			}
 			
-			if barePath == "" {
-				return fmt.Errorf("could not determine repository path")
+			// Load session
+			store := session.NewStore(projectRoot)
+			sess, err := store.Load(ctxName)
+			if err != nil {
+				return err
 			}
-			
-			projectRoot := filepath.Dir(barePath)
 			// ctxName may contain "/" (e.g., "feature/devcontainer")
 			// worktree path uses the original branch name as-is
 			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
@@ -371,6 +364,17 @@ func aiCmd() *cobra.Command {
 	cmd.Flags().StringVar(&aiType, "type", "", "AIタイプ (claude または kimi)")
 
 	return cmd
+}
+
+// getProjectRoot returns the project root path (parent of .bare directory)
+func getProjectRoot(v vcs.VCS) string {
+	switch typedV := v.(type) {
+	case *vcs.Git:
+		return filepath.Dir(typedV.RepoPath)
+	case *vcs.JJ:
+		return filepath.Dir(typedV.RepoPath)
+	}
+	return ""
 }
 
 func loadConfig() (*config.Config, error) {

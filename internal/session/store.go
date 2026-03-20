@@ -30,14 +30,19 @@ type Session struct {
 
 // Store manages session storage.
 type Store struct {
-	BaseDir string
+	ProjectPath string
 }
 
-// NewStore creates a new session store.
-func NewStore(baseDir string) *Store {
+// NewStore creates a new session store for a project.
+func NewStore(projectPath string) *Store {
 	return &Store{
-		BaseDir: baseDir,
+		ProjectPath: projectPath,
 	}
+}
+
+// BaseDir returns the sessions directory for the project.
+func (s *Store) BaseDir() string {
+	return filepath.Join(s.ProjectPath, ".dcell", "sessions")
 }
 
 // sanitizeContextName replaces path separators to create safe filenames.
@@ -48,7 +53,7 @@ func sanitizeContextName(ctxName string) string {
 // GetSessionDir returns the directory for a context's session.
 func (s *Store) GetSessionDir(ctxName string) string {
 	safeName := sanitizeContextName(ctxName)
-	return filepath.Join(s.BaseDir, safeName)
+	return filepath.Join(s.BaseDir(), safeName)
 }
 
 // Create creates a new session for a context.
@@ -153,7 +158,7 @@ func (s *Store) Remove(ctxName string) error {
 
 // List lists all sessions.
 func (s *Store) List() ([]Session, error) {
-	entries, err := os.ReadDir(s.BaseDir)
+	entries, err := os.ReadDir(s.BaseDir())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []Session{}, nil

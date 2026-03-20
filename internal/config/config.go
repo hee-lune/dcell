@@ -32,8 +32,7 @@ type DockerConfig struct {
 
 // AIConfig holds AI assistant settings.
 type AIConfig struct {
-	Default    string `toml:"default"` // "claude" or "kimi"
-	SessionDir string `toml:"session_dir"`
+	Default string `toml:"default"` // "claude", "kimi", or "codex"
 }
 
 // HooksConfig holds lifecycle hooks.
@@ -46,7 +45,6 @@ type HooksConfig struct {
 
 // Default returns the default configuration.
 func Default() *Config {
-	home, _ := os.UserHomeDir()
 	return &Config{
 		VCS: VCSConfig{
 			Prefer:        "jj",
@@ -58,8 +56,7 @@ func Default() *Config {
 			Services: []string{"app", "db", "redis"},
 		},
 		AI: AIConfig{
-			Default:    "claude",
-			SessionDir: filepath.Join(home, ".config", "dcell", "sessions"),
+			Default: "claude",
 		},
 		Hooks: HooksConfig{},
 	}
@@ -144,9 +141,6 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.AI.Default != "" {
 		c.AI.Default = other.AI.Default
-	}
-	if other.AI.SessionDir != "" {
-		c.AI.SessionDir = other.AI.SessionDir
 	}
 	if len(other.Hooks.PostCreate) > 0 {
 		c.Hooks.PostCreate = other.Hooks.PostCreate
