@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/heelune/dcell/internal/config"
 )
 
 // AI defines the interface for AI assistants.
@@ -115,37 +117,65 @@ func (k *Kimi) IsAvailable() bool {
 
 // Start starts a new Kimi session.
 func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
-	// Create agent spec file in .dcell-session/ (gitignored)
+	// Create agent spec files in .dcell-session/ (gitignored)
 	sessionDir := filepath.Dir(session.ContextPath) // .dcell-session/
 	agentPath := filepath.Join(sessionDir, "dcell-agent.yaml")
+	promptPath := filepath.Join(sessionDir, "system-prompt.md")
+	
+	// Get global and project context paths
+	globalDir := filepath.Dir(config.GlobalConfigPath())
+	globalCtxPath := filepath.Join(globalDir, "context.md")
+	
+	// Get project root from session path
+	projectRoot := filepath.Dir(filepath.Dir(ctxPath)) // worktrees/../ = project root
+	projectCtxPath := filepath.Join(projectRoot, ".context.md")
+	
+	// Ensure system prompt file exists
+	if _, err := os.Stat(promptPath); os.IsNotExist(err) {
+		promptContent := fmt.Sprintf(`# dcell Session: %s
+
+## 階層型コンテキストファイル
+
+このセッションの作業を開始する前に、以下のファイルを**順番に** ReadFile ツールで読み込んでください：
+
+### 1. Global Context
+**パス**: %s
+- 共通設定、グローバルな制約事項、個人の好み
+
+### 2. Project Context  
+**パス**: %s
+- プロジェクト固有の設定、技術スタック、コーディング規約
+
+### 3. Session Context
+**パス**: %s/context.md
+- このセッションの目的、目標、作業範囲
+
+### 4. Todo List
+**パス**: %s/todo.md
+- 現在のタスクリスト（進行中、保留中、完了済み）
+
+### 5. Decisions
+**パス**: %s/decisions.md
+- アーキテクチャ決定記録（ADR）
+
+## 指示
+
+上記のコンテキストファイルを**必ずすべて読み込んで**から、開発を続けてください。
+各ファイルの内容を理解し、優先順位と制約を考慮して作業してください。
+`, session.ContextName, globalCtxPath, projectCtxPath, sessionDir, sessionDir, sessionDir)
+		os.WriteFile(promptPath, []byte(promptContent), 0644)
+	}
 	
 	// Ensure agent spec exists
 	if _, err := os.Stat(agentPath); os.IsNotExist(err) {
-		content := fmt.Sprintf(`version: 1
+		// Use relative path from agent spec to prompt file
+		agentContent := `version: 1
 agent:
-  name: dcell-%s
+  name: dcell-session
   extend: default
-  system_prompt: |
-    # dcell Session: %s
-    
-    ## コンテキストファイル
-    
-    このセッションの作業を開始する前に、必ず以下のファイルを ReadFile ツールで読み込んでください：
-    
-    1. **Session Context**: %s/context.md
-       - このセッションの目的、目標、制約事項
-    
-    2. **Todo List**: %s/todo.md
-       - 現在のタスクリスト（進行中、保留中、完了済み）
-    
-    3. **Decisions**: %s/decisions.md
-       - アーキテクチャ決定記録（ADR）
-    
-    ## 指示
-    
-    上記のコンテキストファイルを読み込んだ上で、開発を続けてください。
-`, session.ContextName, session.ContextName, sessionDir, sessionDir, sessionDir)
-		os.WriteFile(agentPath, []byte(content), 0644)
+  system_prompt_path: ./system-prompt.md
+`
+		os.WriteFile(agentPath, []byte(agentContent), 0644)
 	}
 
 	// Start kimi with agent file from .dcell-session/
