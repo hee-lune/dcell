@@ -58,10 +58,13 @@ func initCmd() *cobra.Command {
 				return fmt.Errorf("プロジェクトディレクトリの作成に失敗しました: %w", err)
 			}
 
-			barePath := filepath.Join(projectDir, ".bare")
 			var mainPath string
-			var v vcs.VCS
 			var err error
+
+			// Use absolute paths to avoid issues
+			absProjectDir, _ := filepath.Abs(projectDir)
+			absBarePath := filepath.Join(absProjectDir, ".bare")
+			absMainPath := filepath.Join(absProjectDir, "main")
 
 			switch vcsType {
 			case "git":
@@ -69,48 +72,44 @@ func initCmd() *cobra.Command {
 				if cloneURL != "" {
 					// Clone mode: clone as bare then add main worktree
 					fmt.Printf("クローン中: %s\n", cloneURL)
-					if err := g.CloneBare(cloneURL, barePath, branch); err != nil {
+					if err := g.CloneBare(cloneURL, absBarePath, branch); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
 					// Add main worktree
-					mainPath = filepath.Join(projectDir, "main")
-					if err := g.AddMainWorktree(barePath, mainPath); err != nil {
+					mainPath = absMainPath
+					if err := g.AddMainWorktree(absBarePath, absMainPath); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					v = g
 				} else {
 					// Init mode: create bare repo with main worktree
-					mainPath, err = g.InitBareProject(projectDir)
+					mainPath, err = g.InitBareProject(absProjectDir)
 					if err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					v = g
 				}
 
 			case "jj":
 				j := &vcs.JJ{}
 				if cloneURL != "" {
 					fmt.Printf("クローン中: %s\n", cloneURL)
-					if err := j.CloneBare(cloneURL, barePath, branch); err != nil {
+					if err := j.CloneBare(cloneURL, absBarePath, branch); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					mainPath = filepath.Join(projectDir, "main")
-					if err := j.AddMainWorktree(barePath, mainPath); err != nil {
+					mainPath = absMainPath
+					if err := j.AddMainWorktree(absBarePath, absMainPath); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					v = j
 				} else {
-					mainPath, err = j.InitBareProject(projectDir)
+					mainPath, err = j.InitBareProject(absProjectDir)
 					if err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
-					v = j
 				}
 
 			default:
@@ -118,7 +117,7 @@ func initCmd() *cobra.Command {
 				return fmt.Errorf("不明なVCSタイプ: %s", vcsType)
 			}
 
-			fmt.Printf("%s リポジトリを作成しました\n", v.Name())
+			fmt.Printf("%s リポジトリを作成しました\n", vcsType)
 
 			// Create dcell config in project root (not in main/)
 			cfg := config.Default()
@@ -129,7 +128,7 @@ func initCmd() *cobra.Command {
 
 			// Output summary
 			fmt.Printf("\nプロジェクト '%s' の準備ができました！\n", projectName)
-			fmt.Printf("  Bareリポジトリ: %s\n", barePath)
+			fmt.Printf("  Bareリポジトリ: %s\n", absBarePath)
 			fmt.Printf("  Main worktree:  %s\n", mainPath)
 
 			fmt.Printf("\n次のステップ:\n")
