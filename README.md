@@ -49,6 +49,9 @@ dcell ai
 
 # 使用後に削除
 dcell remove feature-x
+
+# 強制削除（未コミットの変更がある場合）
+dcell remove feature-x --force
 ```
 
 ## ディレクトリ構造
@@ -123,6 +126,7 @@ default = "claude"  # "claude" または "kimi"
 | `switch <name>` | 開発コンテキストに切り替え |
 | `list` | 開発コンテキストの一覧表示 |
 | `remove <name>` | 開発コンテキストを削除 |
+| `remove <name> --force` | 強制削除（未コミット変更も削除）|
 | `ai [name]` | AIアシスタントを起動 |
 | `devcontainer` | Dev Container設定の管理 |
 | `snapshot` | スナップショットの管理 |
