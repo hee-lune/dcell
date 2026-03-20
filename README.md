@@ -13,10 +13,11 @@
 ```bash
 # ソースからビルド
 git clone https://github.com/heelune/dcell
-cd dcell
-go build -o dcell ./cmd/dcell
-mv dcell ~/.local/bin/
+cd dcell/main
+go build -o ~/.local/bin/dcell ./cmd/dcell
 ```
+
+macOS/Linuxの場合、`~/.local/bin` がPATHに含まれていることを確認してください。
 
 ## クイックスタート
 
