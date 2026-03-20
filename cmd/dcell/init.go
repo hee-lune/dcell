@@ -64,8 +64,7 @@ func initCmd() *cobra.Command {
 			// Use absolute paths to avoid issues
 			absProjectDir, _ := filepath.Abs(projectDir)
 			absBarePath := filepath.Join(absProjectDir, ".bare")
-			absWorktreesDir := filepath.Join(absProjectDir, "worktrees")
-			absMainPath := filepath.Join(absWorktreesDir, "main")
+			absMainPath := filepath.Join(absProjectDir, "main")
 
 			switch vcsType {
 			case "git":
@@ -84,8 +83,19 @@ func initCmd() *cobra.Command {
 						return err
 					}
 				} else {
-					// Init mode: create bare repo with main worktree
-					mainPath, err = g.InitBareProject(absProjectDir)
+					// Init mode: create bare repo with main worktree (flat structure)
+					// Create bare repository first
+					git := &vcs.Git{}
+					if err := git.Init(absBarePath, true); err != nil {
+						os.RemoveAll(projectDir)
+						return err
+					}
+					// Add main worktree directly under project root
+					mainPath = absMainPath
+					if err := git.AddMainWorktree(absBarePath, absMainPath); err != nil {
+						os.RemoveAll(projectDir)
+						return err
+					}
 					if err != nil {
 						os.RemoveAll(projectDir)
 						return err
@@ -106,8 +116,15 @@ func initCmd() *cobra.Command {
 						return err
 					}
 				} else {
-					mainPath, err = j.InitBareProject(absProjectDir)
-					if err != nil {
+					// Init mode: create bare repo with main workspace (flat structure)
+					// Create bare git repo with jj
+					if err := j.Init(absBarePath, true); err != nil {
+						os.RemoveAll(projectDir)
+						return err
+					}
+					// Add main workspace directly under project root
+					mainPath = absMainPath
+					if err := j.AddMainWorktree(absBarePath, absMainPath); err != nil {
 						os.RemoveAll(projectDir)
 						return err
 					}
@@ -130,7 +147,6 @@ func initCmd() *cobra.Command {
 			// Output summary
 			fmt.Printf("\nプロジェクト '%s' の準備ができました！\n", projectName)
 			fmt.Printf("  Bareリポジトリ: %s\n", absBarePath)
-			fmt.Printf("  Worktrees:      %s\n", absWorktreesDir)
 			fmt.Printf("  Main worktree:  %s\n", mainPath)
 
 			fmt.Printf("\n次のステップ:\n")

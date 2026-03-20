@@ -28,5 +28,7 @@ Thumbs.db
 
 # dcell specific
 .dcell/
+.dcell-session/
+.devcontainer/
 .env.dcell*
 docker-compose.dcell.yml

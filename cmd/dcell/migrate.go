@@ -104,13 +104,12 @@ func migrateCmd() *cobra.Command {
 				return fmt.Errorf(".git/ の移動に失敗しました: %w", err)
 			}
 
-			// Create worktrees directory and main worktree
-			worktreesDir := filepath.Join(currentDir, "worktrees")
-			mainPath := filepath.Join(worktreesDir, "main")
-			fmt.Println("worktrees/main/ ディレクトリを作成中...")
+			// Create main worktree directly under project root (flat structure)
+			mainPath := filepath.Join(currentDir, "main")
+			fmt.Println("main/ ディレクトリを作成中...")
 			if err := os.MkdirAll(mainPath, 0755); err != nil {
 				rollbackMigrate(currentDir, tempDir)
-				return fmt.Errorf("worktrees/main/ の作成に失敗しました: %w", err)
+				return fmt.Errorf("main/ の作成に失敗しました: %w", err)
 			}
 
 			// Move contents from temp to main/
@@ -161,12 +160,11 @@ func migrateCmd() *cobra.Command {
 			fmt.Printf("\n✅ 移行完了！\n")
 			fmt.Printf("\n新しい構造:\n")
 			fmt.Printf("  %s/\n", projectName)
-			fmt.Printf("    .bare/              ← bareリポジトリ\n")
-			fmt.Printf("    worktrees/\n")
-			fmt.Printf("      main/            ← 元の内容\n")
-			fmt.Printf("    .dcell/            ← dcell設定\n")
+			fmt.Printf("    .bare/       ← bareリポジトリ\n")
+			fmt.Printf("    main/        ← 元の内容\n")
+			fmt.Printf("    .dcell/      ← dcell設定\n")
 			fmt.Printf("\n次のステップ:\n")
-			fmt.Printf("  cd worktrees/main\n")
+			fmt.Printf("  cd main\n")
 			fmt.Printf("  dcell create feature-x\n")
 
 			return nil
@@ -197,9 +195,9 @@ func rollbackMigrate(currentDir, tempDir string) {
 		os.Rename(src, dst)
 	}
 
-	// Remove worktrees/ if it exists
-	worktreesPath := filepath.Join(currentDir, "worktrees")
-	os.RemoveAll(worktreesPath)
+	// Remove main/ if it exists (for rollback)
+	mainPath := filepath.Join(currentDir, "main")
+	os.RemoveAll(mainPath)
 
 	fmt.Println("ロールバック完了。手動での確認を推奨します。")
 }

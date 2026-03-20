@@ -262,7 +262,7 @@ func (g *Git) Clone(url string, dest string, branch string) error {
 }
 
 // InitBareProject initializes a bare repo project structure.
-// Creates: projectDir/.bare/, projectDir/worktrees/main/, and initial commit
+// Creates: projectDir/.bare/, projectDir/main/, and initial commit
 func (g *Git) InitBareProject(projectDir string) (string, error) {
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {

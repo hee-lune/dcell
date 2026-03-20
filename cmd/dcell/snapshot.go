@@ -48,11 +48,7 @@ func snapshotSaveCmd() *cobra.Command {
 			// Determine context name from current directory
 			ctxName := filepath.Base(repoPath)
 
-			// Check if we're in a worktree
-			parentDir := filepath.Base(filepath.Dir(repoPath))
-			if parentDir != "worktrees" && parentDir != "." {
-				// Try to get context from session or use directory name
-			}
+			// Context name is derived from directory name in flat structure
 
 			store := snapshot.NewStore(repoPath)
 
