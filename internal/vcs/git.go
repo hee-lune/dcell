@@ -10,7 +10,7 @@ import (
 
 // Git implements VCS interface for Git worktrees.
 type Git struct {
-	RepoPath string
+	RepoPath string // Path to .bare/ directory
 }
 
 // Name returns the VCS name.
@@ -19,15 +19,79 @@ func (g *Git) Name() string {
 }
 
 // Detect checks if the repository uses git.
+// For bare-first design, looks for .bare/ directory.
 func (g *Git) Detect(repoPath string) bool {
+	// First, check if there's a .bare directory
+	barePath := filepath.Join(repoPath, ".bare")
+	if _, err := os.Stat(barePath); err == nil {
+		// Verify it's a valid git repo
+		cmd := exec.Command("git", "rev-parse", "--git-dir")
+		cmd.Dir = barePath
+		if cmd.Run() == nil {
+			g.RepoPath = barePath
+			return true
+		}
+	}
+
+	// Fallback: check if current dir is a worktree
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmd.Dir = repoPath
-	return cmd.Run() == nil
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	// Try to find .bare/ from gitdir link
+	gitDir := filepath.Join(repoPath, ".git")
+	if data, err := os.ReadFile(gitDir); err == nil {
+		content := string(data)
+		if strings.HasPrefix(content, "gitdir: ") {
+			// This is a worktree, try to find the bare repo
+			gitDirPath := strings.TrimSpace(strings.TrimPrefix(content, "gitdir: "))
+			// gitdir points to .bare/worktrees/<name>
+			parent := filepath.Dir(filepath.Dir(gitDirPath))
+			if _, err := os.Stat(filepath.Join(parent, "config")); err == nil {
+				g.RepoPath = parent
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// DetectBare looks for .bare directory in current or parent directories.
+func (g *Git) DetectBare(startPath string) (string, error) {
+	current := startPath
+	for {
+		barePath := filepath.Join(current, ".bare")
+		if info, err := os.Stat(barePath); err == nil && info.IsDir() {
+			// Verify it's a valid bare git repo
+			cmd := exec.Command("git", "rev-parse", "--git-dir")
+			cmd.Dir = barePath
+			if err := cmd.Run(); err == nil {
+				return barePath, nil
+			}
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+
+	return "", fmt.Errorf("no .bare directory found in %s or its parents", startPath)
 }
 
 // CreateContext creates a new git worktree.
 func (g *Git) CreateContext(name string, base string) (*Context, error) {
-	ctxPath := filepath.Join(g.RepoPath, "..", name)
+	if g.RepoPath == "" {
+		return nil, fmt.Errorf("repository not detected")
+	}
+
+	// Get project root from .bare path
+	projectRoot := filepath.Dir(g.RepoPath)
+	ctxPath := filepath.Join(projectRoot, name)
 
 	if base == "" {
 		base = "HEAD"
@@ -57,7 +121,12 @@ func (g *Git) CreateContext(name string, base string) (*Context, error) {
 
 // SwitchContext switches to an existing worktree.
 func (g *Git) SwitchContext(name string) error {
-	ctxPath := filepath.Join(g.RepoPath, "..", name)
+	if g.RepoPath == "" {
+		return fmt.Errorf("repository not detected")
+	}
+
+	projectRoot := filepath.Dir(g.RepoPath)
+	ctxPath := filepath.Join(projectRoot, name)
 
 	// Verify it exists and is a valid git worktree
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
@@ -71,6 +140,10 @@ func (g *Git) SwitchContext(name string) error {
 
 // ListContexts lists all git worktrees.
 func (g *Git) ListContexts() ([]Context, error) {
+	if g.RepoPath == "" {
+		return nil, fmt.Errorf("repository not detected")
+	}
+
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = g.RepoPath
 	out, err := cmd.Output()
@@ -118,7 +191,12 @@ func (g *Git) ListContexts() ([]Context, error) {
 
 // RemoveContext removes a worktree.
 func (g *Git) RemoveContext(name string) error {
-	ctxPath := filepath.Join(g.RepoPath, "..", name)
+	if g.RepoPath == "" {
+		return fmt.Errorf("repository not detected")
+	}
+
+	projectRoot := filepath.Dir(g.RepoPath)
+	ctxPath := filepath.Join(projectRoot, name)
 
 	cmd := exec.Command("git", "worktree", "remove", ctxPath)
 	cmd.Dir = g.RepoPath
@@ -131,9 +209,13 @@ func (g *Git) RemoveContext(name string) error {
 
 // CurrentContext returns the current worktree.
 func (g *Git) CurrentContext() (*Context, error) {
+	if g.RepoPath == "" {
+		return nil, fmt.Errorf("repository not detected")
+	}
+
 	// Get current path
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	cmd.Dir = g.RepoPath
+	cmd.Dir = "."
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current path: %w", err)
@@ -165,13 +247,7 @@ func (g *Git) Init(repoPath string, bare bool) error {
 		return fmt.Errorf("failed to init repository: %w\n%s", err, out)
 	}
 
-	// If bare, set up the RepoPath for subsequent operations
-	if bare {
-		g.RepoPath = repoPath
-	} else {
-		g.RepoPath = repoPath
-	}
-
+	g.RepoPath = repoPath
 	return nil
 }
 
@@ -192,78 +268,117 @@ func (g *Git) Clone(url string, dest string, branch string) error {
 	return nil
 }
 
-// InitAndSetup initializes a repo and creates main worktree for bare repos.
-func (g *Git) InitAndSetup(projectDir string, bare bool) (string, error) {
-	// Get absolute path for projectDir
+// InitBareProject initializes a bare repo project structure.
+// Creates: projectDir/.bare/, projectDir/main/, and initial commit
+func (g *Git) InitBareProject(projectDir string) (string, error) {
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	if bare {
-		// Create bare repository
-		barePath := absProjectDir + ".git"
-		if err := g.Init(barePath, true); err != nil {
-			return "", err
-		}
+	barePath := filepath.Join(absProjectDir, ".bare")
 
-		// For bare repos, we need a different approach since worktrees require existing branches
-		// We'll create a temporary repo to make an initial commit, then use that
-		tmpDir := absProjectDir + ".tmp"
-		if err := g.Init(tmpDir, false); err != nil {
-			return "", err
-		}
-		defer os.RemoveAll(tmpDir)
-
-		// Get current branch name
-		branch, _ := g.getCurrentBranch(tmpDir)
-		if branch == "" {
-			branch = "main" // default
-		}
-
-		// Create initial commit
-		cmd := exec.Command("git", "commit", "--allow-empty", "-m", "Initial commit")
-		cmd.Dir = tmpDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("failed to create initial commit: %w\n%s", err, out)
-		}
-
-		// Push to bare repo
-		cmd = exec.Command("git", "push", barePath, branch)
-		cmd.Dir = tmpDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("failed to push to bare repo: %w\n%s", err, out)
-		}
-
-		// Create main worktree
-		mainPath := filepath.Join(absProjectDir, "main")
-		if err := os.MkdirAll(mainPath, 0755); err != nil {
-			return "", fmt.Errorf("failed to create main directory: %w", err)
-		}
-
-		// Add main worktree
-		cmd = exec.Command("git", "worktree", "add", mainPath, branch)
-		cmd.Dir = barePath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("failed to create main worktree: %w\n%s", err, out)
-		}
-
-		g.RepoPath = barePath
-		return mainPath, nil
-	}
-
-	// Non-bare: simple init
-	if err := g.Init(absProjectDir, false); err != nil {
+	// Create bare repository
+	if err := g.Init(barePath, true); err != nil {
 		return "", err
 	}
 
-	// Create initial commit for non-bare repos too
-	cmd := exec.Command("git", "commit", "--allow-empty", "-m", "Initial commit")
-	cmd.Dir = absProjectDir
-	cmd.Run() // Ignore error
+	// Create a temporary repo to make initial commit
+	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-init-%d", os.Getpid()))
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmpDir)
 
-	g.RepoPath = absProjectDir
-	return absProjectDir, nil
+	// Init temp repo
+	tmpGit := &Git{}
+	if err := tmpGit.Init(tmpDir, false); err != nil {
+		return "", err
+	}
+
+	// Create initial commit
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", "Initial commit")
+	cmd.Dir = tmpDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("failed to create initial commit: %w\n%s", err, out)
+	}
+
+	// Get branch name
+	branch, _ := tmpGit.getCurrentBranch(tmpDir)
+	if branch == "" {
+		branch = "main"
+	}
+
+	// Push to bare repo
+	cmd = exec.Command("git", "push", barePath, branch)
+	cmd.Dir = tmpDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("failed to push to bare repo: %w\n%s", err, out)
+	}
+
+	// Add main worktree
+	mainPath := filepath.Join(absProjectDir, "main")
+	if err := g.AddMainWorktree(barePath, mainPath); err != nil {
+		return "", err
+	}
+
+	g.RepoPath = barePath
+	return mainPath, nil
+}
+
+// CloneBare clones a repository as bare and adds main worktree.
+func (g *Git) CloneBare(url string, barePath string, branch string) error {
+	args := []string{"clone", "--bare"}
+	if branch != "" {
+		args = append(args, "--branch", branch)
+	}
+	args = append(args, url, barePath)
+
+	cmd := exec.Command("git", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to clone repository: %w\n%s", err, out)
+	}
+
+	g.RepoPath = barePath
+	return nil
+}
+
+// AddMainWorktree adds a main worktree to a bare repository.
+func (g *Git) AddMainWorktree(barePath string, mainPath string) error {
+	// Ensure main directory exists
+	if err := os.MkdirAll(mainPath, 0755); err != nil {
+		return fmt.Errorf("failed to create main directory: %w", err)
+	}
+
+	// Determine default branch
+	cmd := exec.Command("git", "symbolic-ref", "HEAD")
+	cmd.Dir = barePath
+	out, err := cmd.Output()
+	if err != nil {
+		// Default to main
+		cmd = exec.Command("git", "symbolic-ref", "HEAD", "refs/heads/main")
+		cmd.Dir = barePath
+		cmd.Run()
+	}
+
+	branch := strings.TrimPrefix(strings.TrimSpace(string(out)), "refs/heads/")
+	if branch == "" {
+		branch = "main"
+	}
+
+	// Add worktree
+	cmd = exec.Command("git", "worktree", "add", mainPath, branch)
+	cmd.Dir = barePath
+	if _, err := cmd.CombinedOutput(); err != nil {
+		// Try with force if branch doesn't exist
+		cmd = exec.Command("git", "worktree", "add", "-B", branch, mainPath)
+		cmd.Dir = barePath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to create main worktree: %w\n%s", err, out)
+		}
+	}
+
+	return nil
 }
 
 func (g *Git) getCurrentBranch(path string) (string, error) {
