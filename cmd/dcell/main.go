@@ -41,6 +41,7 @@ func init() {
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
+	rootCmd.AddCommand(contextCmd())
 }
 
 func createCmd() *cobra.Command {
@@ -332,9 +333,17 @@ func aiCmd() *cobra.Command {
 			projectRoot := filepath.Dir(barePath)
 			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
 			
+			// Create context loader for layered context
+			globalDir := filepath.Dir(config.GlobalConfigPath())
+			loader := session.NewContextLoader(
+				globalDir,                  // Global: ~/.config/dcell/
+				projectRoot,                // Project: dcell/
+				filepath.Dir(sess.ContextPath), // Session: .dcell-session/
+			)
+			
 			fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
 			
-			return ai.Start(ctxPath, sess)
+			return ai.Start(ctxPath, sess, loader)
 		},
 	}
 

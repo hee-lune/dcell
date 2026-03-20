@@ -12,9 +12,9 @@ import (
 type AI interface {
 	Name() string
 	IsAvailable() bool
-	Start(ctxPath string, session *Session) error
-	Continue(ctxPath string, session *Session) error
-	Execute(ctxPath string, session *Session, prompt string) error
+	Start(ctxPath string, session *Session, loader *ContextLoader) error
+	Continue(ctxPath string, session *Session, loader *ContextLoader) error
+	Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error
 }
 
 // Claude implements AI interface for Claude Code.
@@ -32,15 +32,24 @@ func (c *Claude) IsAvailable() bool {
 }
 
 // Start starts a new Claude Code session.
-func (c *Claude) Start(ctxPath string, session *Session) error {
-	// Load context into Claude
+func (c *Claude) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
 	var contextContent string
-	
-	if data, err := os.ReadFile(session.ContextPath); err == nil {
-		contextContent += string(data) + "\n\n"
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
 	}
-	if data, err := os.ReadFile(session.TodoPath); err == nil {
-		contextContent += string(data) + "\n\n"
+
+	// Fallback to session files if no layered context
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
 	}
 
 	// Write a temporary file with context (sanitize filename)
@@ -62,13 +71,13 @@ func (c *Claude) Start(ctxPath string, session *Session) error {
 }
 
 // Continue continues an existing Claude Code session.
-func (c *Claude) Continue(ctxPath string, session *Session) error {
+func (c *Claude) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
 	// For now, just start fresh - Claude maintains its own history
-	return c.Start(ctxPath, session)
+	return c.Start(ctxPath, session, loader)
 }
 
 // Execute sends a one-off command to Claude.
-func (c *Claude) Execute(ctxPath string, session *Session, prompt string) error {
+func (c *Claude) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
 	cmd := exec.Command("claude", "--prompt", "-")
 	cmd.Dir = ctxPath
 	cmd.Stdin = os.Stdin
@@ -104,14 +113,24 @@ func (k *Kimi) IsAvailable() bool {
 }
 
 // Start starts a new Kimi session.
-func (k *Kimi) Start(ctxPath string, session *Session) error {
+func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
 	var contextContent string
-	
-	if data, err := os.ReadFile(session.ContextPath); err == nil {
-		contextContent += string(data) + "\n\n"
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
 	}
-	if data, err := os.ReadFile(session.TodoPath); err == nil {
-		contextContent += string(data) + "\n\n"
+
+	// Fallback to session files
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
 	}
 
 	// Kimi doesn't have a direct prompt flag, so we'll use -c flag
@@ -125,12 +144,12 @@ func (k *Kimi) Start(ctxPath string, session *Session) error {
 }
 
 // Continue continues an existing Kimi session.
-func (k *Kimi) Continue(ctxPath string, session *Session) error {
-	return k.Start(ctxPath, session)
+func (k *Kimi) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
+	return k.Start(ctxPath, session, loader)
 }
 
 // Execute sends a one-off command to Kimi.
-func (k *Kimi) Execute(ctxPath string, session *Session, prompt string) error {
+func (k *Kimi) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
 	cmd := exec.Command("kimi", "-c", prompt)
 	cmd.Dir = ctxPath
 	cmd.Stdin = os.Stdin
