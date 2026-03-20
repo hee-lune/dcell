@@ -19,7 +19,8 @@ type Config struct {
 
 // VCSConfig holds version control settings.
 type VCSConfig struct {
-	Prefer string `toml:"prefer"` // "jj" or "git"
+	Prefer         string `toml:"prefer"`          // "jj" or "git"
+	DefaultBranch  string `toml:"default_branch"`  // default: "main"
 }
 
 // DockerConfig holds Docker settings.
@@ -48,7 +49,8 @@ func Default() *Config {
 	home, _ := os.UserHomeDir()
 	return &Config{
 		VCS: VCSConfig{
-			Prefer: "jj",
+			Prefer:        "jj",
+			DefaultBranch: "main",
 		},
 		Docker: DockerConfig{
 			PortBase: 3000,

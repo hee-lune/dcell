@@ -71,6 +71,11 @@ func createCmd() *cobra.Command {
 				vcsType = cfg.VCS.Prefer
 			}
 
+			// Determine base branch
+			if from == "" {
+				from = cfg.VCS.DefaultBranch
+			}
+
 			// Create VCS instance
 			var v vcs.VCS
 			if vcsType == "auto" {
