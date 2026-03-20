@@ -23,6 +23,11 @@ type VCS interface {
 	ListContexts() ([]Context, error)
 	RemoveContext(name string) error
 	CurrentContext() (*Context, error)
+
+	// Init initializes a new repository (bare or non-bare).
+	Init(repoPath string, bare bool) error
+	// Clone clones a remote repository.
+	Clone(url string, dest string, branch string) error
 }
 
 // NewAuto detects the VCS type and returns the appropriate implementation.

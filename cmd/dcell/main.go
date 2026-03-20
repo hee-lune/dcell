@@ -33,7 +33,8 @@ func main() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "設定ファイル（デフォルト: $HOME/.config/dcell/config.toml）")
-	
+
+	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(createCmd())
 	rootCmd.AddCommand(switchCmd())
 	rootCmd.AddCommand(listCmd())

@@ -3,6 +3,7 @@ package vcs
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -55,7 +56,7 @@ func (j *JJ) SwitchContext(name string) error {
 	// In jj, we just need to cd to the workspace directory
 	// The workspace is already independent
 	ctxPath := filepath.Join(j.RepoPath, "..", name)
-	
+
 	// Verify it exists and is a valid jj workspace
 	cmd := exec.Command("jj", "root")
 	cmd.Dir = ctxPath
@@ -137,12 +138,89 @@ func (j *JJ) CurrentContext() (*Context, error) {
 	}
 
 	name := strings.TrimSpace(string(out))
-	
+
 	return &Context{
 		Name: name,
 		Path: j.RepoPath,
 		VCS:  "jj",
 	}, nil
+}
+
+// Init initializes a new Jujutsu repository.
+// JJ works with git repositories, so we use git init + jj colocate.
+func (j *JJ) Init(repoPath string, bare bool) error {
+	// First, git init
+	git := &Git{}
+	if err := git.Init(repoPath, bare); err != nil {
+		return err
+	}
+
+	// Then colocate jj
+	cmd := exec.Command("jj", "git", "init", "--colocate")
+	cmd.Dir = repoPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to initialize jj: %w\n%s", err, out)
+	}
+
+	// Create initial empty change
+	cmd = exec.Command("jj", "describe", "-m", "Initial commit")
+	cmd.Dir = repoPath
+	cmd.Run() // Ignore error for initial empty repo
+
+	j.RepoPath = repoPath
+	return nil
+}
+
+// Clone clones a remote repository with Jujutsu.
+func (j *JJ) Clone(url string, dest string, branch string) error {
+	// Use git clone first
+	git := &Git{}
+	if err := git.Clone(url, dest, branch); err != nil {
+		return err
+	}
+
+	// Then colocate jj
+	cmd := exec.Command("jj", "git", "init", "--colocate")
+	cmd.Dir = dest
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to initialize jj: %w\n%s", err, out)
+	}
+
+	j.RepoPath = dest
+	return nil
+}
+
+// InitAndSetup initializes a repo and creates main workspace for bare repos.
+func (j *JJ) InitAndSetup(projectDir string, bare bool) (string, error) {
+	if bare {
+		// Create bare repository with git
+		barePath := projectDir + ".git"
+		if err := j.Init(barePath, true); err != nil {
+			return "", err
+		}
+
+		// Create main workspace
+		mainPath := filepath.Join(projectDir, "main")
+		if err := os.MkdirAll(mainPath, 0755); err != nil {
+			return "", fmt.Errorf("failed to create main directory: %w", err)
+		}
+
+		// Add main workspace
+		cmd := exec.Command("jj", "workspace", "create", "--name", "main", mainPath)
+		cmd.Dir = barePath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("failed to create main workspace: %w\n%s", err, out)
+		}
+
+		return mainPath, nil
+	}
+
+	// Non-bare: simple init
+	if err := j.Init(projectDir, false); err != nil {
+		return "", err
+	}
+
+	return projectDir, nil
 }
 
 func (j *JJ) getBaseRevision(path string) (string, error) {
