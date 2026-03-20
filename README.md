@@ -23,12 +23,8 @@ mv dcell ~/.local/bin/
 ### 新規プロジェクトの作成
 
 ```bash
-# 新規プロジェクトを初期化
+# 新規プロジェクトを初期化（bareリポジトリ）
 dcell init my-project
-cd my-project
-
-# またはbareリポジトリとして作成
-dcell init my-project --bare
 cd my-project/main
 
 # 既存リポジトリをクローン
@@ -46,13 +42,23 @@ dcell list
 
 # コンテキストに切り替え
 dcell switch feature-x
-cd ../feature-x
+cd ../feature-x  # フラット構造: main/ と同じ階層
 
 # AIアシスタントを起動
 dcell ai
 
 # 使用後に削除
 dcell remove feature-x
+```
+
+## ディレクトリ構造
+
+```
+my-project/
+├── .bare/          # bareリポジトリ
+├── main/           # メインworktree
+├── feature-x/      # 追加worktree（フラット構造）
+└── .dcell/         # dcell設定
 ```
 
 ## 機能
@@ -112,8 +118,6 @@ default = "claude"  # "claude" または "kimi"
 
 | コマンド | 説明 |
 |---------|------|
-| コマンド | 説明 |
-|---------|------|
 | `init <dir>` | 新規プロジェクトを初期化 |
 | `create <name>` | 新しい開発コンテキストを作成 |
 | `switch <name>` | 開発コンテキストに切り替え |
@@ -129,8 +133,8 @@ default = "claude"  # "claude" または "kimi"
 # 新規ローカルリポジトリを作成
 dcell init my-project
 
-# bareリポジトリとして作成（main worktree自動作成）
-dcell init my-project --bare
+# main worktreeが自動作成される
+dcell init my-project
 
 # 既存リポジトリをクローン
 dcell init my-project --clone https://github.com/user/repo.git
