@@ -99,6 +99,12 @@ func (s *Store) Create(ctxName string, vcs string, ctxPath string) (*Session, er
 		return nil, err
 	}
 
+	// Create AGENTS.md for Kimi CLI
+	if err := s.CreateAGENTSMD(ctxPath, ctxName); err != nil {
+		// Non-fatal error
+		fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
+	}
+
 	return session, nil
 }
 
@@ -195,6 +201,43 @@ func (s *Store) createContextFile(path string, ctxName string) error {
 `, ctxName)
 
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func (s *Store) CreateAGENTSMD(ctxPath string, ctxName string) error {
+	agentsPath := filepath.Join(ctxPath, "AGENTS.md")
+	
+	// Read context and todo content if they exist
+	var contextContent, todoContent string
+	contextFile := filepath.Join(ctxPath, ".dcell-session", "context.md")
+	todoFile := filepath.Join(ctxPath, ".dcell-session", "todo.md")
+	
+	if data, err := os.ReadFile(contextFile); err == nil {
+		contextContent = string(data)
+	}
+	if data, err := os.ReadFile(todoFile); err == nil {
+		todoContent = string(data)
+	}
+	
+	content := fmt.Sprintf(`# Project Context: %s
+
+## Session Information
+- **Context**: %s
+- **Created**: %s
+
+## Project Context
+
+%s
+
+## Current Tasks
+
+%s
+
+## Instructions
+
+上記は現在のプロジェクトのコンテキストです。この情報を参考にして開発を続けてください。
+`, ctxName, ctxName, time.Now().Format(time.RFC3339), contextContent, todoContent)
+
+	return os.WriteFile(agentsPath, []byte(content), 0644)
 }
 
 func (s *Store) createTodoFile(path string) error {

@@ -115,53 +115,18 @@ func (k *Kimi) IsAvailable() bool {
 
 // Start starts a new Kimi session.
 func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
-	// Load layered context
-	var contextContent string
-	if loader != nil {
-		loadedCtx, err := loader.LoadContext()
-		if err == nil && loadedCtx != "" {
-			contextContent = loadedCtx
-		}
-	}
-
-	// Fallback to session files
-	if contextContent == "" {
-		if data, err := os.ReadFile(session.ContextPath); err == nil {
-			contextContent += string(data) + "\n\n"
-		}
-		if data, err := os.ReadFile(session.TodoPath); err == nil {
-			contextContent += string(data) + "\n\n"
-		}
-	}
+	// Kimi CLI automatically reads AGENTS.md if it exists in the working directory
+	// ${KIMI_AGENTS_MD} is expanded to the content of AGENTS.md in system prompts
+	// We create AGENTS.md in Store.Create() with context and todo content
 
 	// Start kimi in interactive mode
 	cmd := exec.Command("kimi")
 	cmd.Dir = ctxPath
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Create pipe for stdin to send context first, then user input
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start kimi: %w", err)
-	}
-
-	// Send context as first input in a goroutine
-	go func() {
-		defer stdin.Close()
-		// Send context
-		io.WriteString(stdin, contextContent)
-		io.WriteString(stdin, "\n\n上記は現在のプロジェクトのコンテキストです。開発を続けてください。\n\n")
-		// Then copy user input
-		io.Copy(stdin, os.Stdin)
-	}()
-
-	return cmd.Wait()
+	return cmd.Run()
 }
 
 // Continue continues an existing Kimi session.
