@@ -78,7 +78,8 @@ dcell remove feature-x
 
 ```toml
 [vcs]
-prefer = "jj"  # "jj" または "git"
+prefer = "jj"           # "jj" または "git"
+default_branch = "main" # dcell create のデフォルトブランチ
 
 [docker]
 port_base = 3000
