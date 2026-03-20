@@ -180,6 +180,93 @@ func (k *Kimi) Execute(ctxPath string, session *Session, prompt string, loader *
 	return cmd.Run()
 }
 
+// Codex implements AI interface for OpenAI Codex CLI.
+type Codex struct{}
+
+// Name returns the AI name.
+func (c *Codex) Name() string {
+	return "codex"
+}
+
+// IsAvailable checks if Codex CLI is installed.
+func (c *Codex) IsAvailable() bool {
+	_, err := exec.LookPath("codex")
+	return err == nil
+}
+
+// Start starts a new Codex session.
+func (c *Codex) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
+	var contextContent string
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
+	}
+
+	// Fallback to session files
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+	}
+
+	// Write a temporary file with context
+	safeName := strings.ReplaceAll(session.ContextName, "/", "-")
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-codex-%s-prompt.txt", safeName))
+	if err := os.WriteFile(tmpFile, []byte(contextContent), 0644); err != nil {
+		return fmt.Errorf("failed to write prompt file: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	// Start Codex with context
+	// Codex supports --image flag for context, but we'll use stdin for text
+	cmd := exec.Command("codex")
+	cmd.Dir = ctxPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Create pipe for stdin to send context first
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start codex: %w", err)
+	}
+
+	// Send context as first input
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, contextContent)
+		io.WriteString(stdin, "\n\n---\n\nAbove is the project context. Please continue development.\n\n")
+		io.Copy(stdin, os.Stdin)
+	}()
+
+	return cmd.Wait()
+}
+
+// Continue continues an existing Codex session.
+func (c *Codex) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
+	return c.Start(ctxPath, session, loader)
+}
+
+// Execute sends a one-off command to Codex.
+func (c *Codex) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
+	cmd := exec.Command("codex", "-q", prompt)
+	cmd.Dir = ctxPath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
 // GetAI returns an AI instance by name.
 func GetAI(name string) (AI, error) {
 	switch name {
@@ -187,6 +274,8 @@ func GetAI(name string) (AI, error) {
 		return &Claude{}, nil
 	case "kimi":
 		return &Kimi{}, nil
+	case "codex":
+		return &Codex{}, nil
 	default:
 		return nil, fmt.Errorf("unknown AI: %s", name)
 	}
@@ -194,7 +283,7 @@ func GetAI(name string) (AI, error) {
 
 // DetectAI tries to detect available AI tools.
 func DetectAI() (AI, error) {
-	aiList := []AI{&Claude{}, &Kimi{}}
+	aiList := []AI{&Claude{}, &Kimi{}, &Codex{}}
 	
 	for _, ai := range aiList {
 		if ai.IsAvailable() {
@@ -202,5 +291,5 @@ func DetectAI() (AI, error) {
 		}
 	}
 	
-	return nil, fmt.Errorf("no AI tool found (install claude or kimi)")
+	return nil, fmt.Errorf("no AI tool found (install claude, kimi, or codex)")
 }
