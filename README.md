@@ -47,6 +47,9 @@ cd ../feature-x  # フラット構造: main/ と同じ階層
 # AIアシスタントを起動
 dcell ai
 
+# Docker環境を起動（自動的にdcellのポート設定が適用される）
+dcell compose up -d
+
 # 使用後に削除
 dcell remove feature-x
 
@@ -127,6 +130,7 @@ default = "claude"  # "claude" または "kimi"
 | `list` | 開発コンテキストの一覧表示 |
 | `remove <name>` | 開発コンテキストを削除 |
 | `remove <name> --force` | 強制削除（未コミット変更も削除）|
+| `compose [args]` | docker compose のラッパー（dcell設定自動適用）|
 | `ai [name]` | AIアシスタントを起動 |
 | `devcontainer` | Dev Container設定の管理 |
 | `snapshot` | スナップショットの管理 |
@@ -148,6 +152,24 @@ dcell init my-project --clone https://github.com/user/repo.git --branch develop
 
 # Jujutsuを使用
 dcell init my-project --vcs jj
+```
+
+### compose コマンド
+
+`docker compose` のラッパーで、自動的に `docker-compose.dcell.yml` を含めて実行します。
+
+```bash
+# カレントディレクトリのコンテキストで起動
+dcell compose up -d
+
+# 明示的にコンテキストを指定
+dcell compose -c feature-x up -d
+dcell compose -c feature-x down
+
+# 任意の docker compose 引数が使える
+dcell compose logs -f
+dcell compose exec app bash
+dcell compose -c feature-x ps
 ```
 
 ## ライセンス
