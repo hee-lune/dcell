@@ -285,23 +285,22 @@ func aiCmd() *cobra.Command {
 		Short: "AIアシスタントを起動",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			repoPath, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			// Determine context name
+			// Determine context name and detect repository first
 			var ctxName string
+			var v vcs.VCS
 			if len(args) > 0 {
 				ctxName = args[0]
+				// Context specified, but still try to detect repo for project root
+				v, _ = vcs.NewAuto(repoPath)
 			} else {
 				// Try to get current context from directory
-				v, err := vcs.NewAuto(repoPath)
+				var err error
+				v, err = vcs.NewAuto(repoPath)
 				if err != nil {
 					return fmt.Errorf("no context specified and not in a dcell: %w", err)
 				}
@@ -310,6 +309,18 @@ func aiCmd() *cobra.Command {
 					return fmt.Errorf("no context specified and not in a dcell: %w", err)
 				}
 				ctxName = current.Name
+			}
+
+			// Get project root for config loading
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+
+			// Load config from project root (works from any worktree)
+			cfg, err := loadConfigForPath(projectRoot)
+			if err != nil {
+				return err
 			}
 
 			// Get AI
@@ -323,18 +334,6 @@ func aiCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-			}
-
-			// Find .bare directory and construct ctxPath
-			v, err := vcs.NewAuto(repoPath)
-			if err != nil {
-				return fmt.Errorf("failed to detect repository: %w", err)
-			}
-			
-			// Get project root
-			projectRoot := getProjectRoot(v)
-			if projectRoot == "" {
-				projectRoot = repoPath
 			}
 			
 			// Get context path (flat structure: directly under project root)
@@ -383,6 +382,10 @@ func getProjectRoot(v vcs.VCS) string {
 }
 
 func loadConfig() (*config.Config, error) {
+	return loadConfigForPath(".")
+}
+
+func loadConfigForPath(projectPath string) (*config.Config, error) {
 	cfg := config.Default()
 
 	// Load global config
@@ -391,7 +394,7 @@ func loadConfig() (*config.Config, error) {
 	}
 
 	// Load project config if available
-	if projectCfg, err := config.LoadProject("."); err == nil {
+	if projectCfg, err := config.LoadProject(projectPath); err == nil {
 		cfg.Merge(projectCfg)
 	}
 
