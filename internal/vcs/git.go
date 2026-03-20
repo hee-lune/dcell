@@ -183,7 +183,7 @@ func (g *Git) ListContexts() ([]Context, error) {
 }
 
 // RemoveContext removes a worktree.
-func (g *Git) RemoveContext(name string) error {
+func (g *Git) RemoveContext(name string, force bool) error {
 	if g.RepoPath == "" {
 		return fmt.Errorf("repository not detected")
 	}
@@ -191,7 +191,13 @@ func (g *Git) RemoveContext(name string) error {
 	projectRoot := filepath.Dir(g.RepoPath)
 	ctxPath := filepath.Join(projectRoot, name)
 
-	cmd := exec.Command("git", "worktree", "remove", ctxPath)
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, ctxPath)
+
+	cmd := exec.Command("git", args...)
 	cmd.Dir = g.RepoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to remove worktree: %w\n%s", err, out)

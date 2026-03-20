@@ -229,7 +229,9 @@ func listCmd() *cobra.Command {
 }
 
 func removeCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "開発コンテキストを削除",
 		Args:  cobra.ExactArgs(1),
@@ -258,7 +260,7 @@ func removeCmd() *cobra.Command {
 			dcGenerator.Cleanup(ctxName)
 
 			// Remove VCS context
-			if err := v.RemoveContext(ctxName); err != nil {
+			if err := v.RemoveContext(ctxName, force); err != nil {
 				return err
 			}
 
@@ -275,6 +277,10 @@ func removeCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "強制削除（未コミットの変更も削除）")
+
+	return cmd
 }
 
 func aiCmd() *cobra.Command {

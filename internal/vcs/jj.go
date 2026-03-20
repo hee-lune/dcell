@@ -175,7 +175,7 @@ func (j *JJ) ListContexts() ([]Context, error) {
 }
 
 // RemoveContext removes a workspace.
-func (j *JJ) RemoveContext(name string) error {
+func (j *JJ) RemoveContext(name string, force bool) error {
 	if j.RepoPath == "" {
 		return fmt.Errorf("repository not detected")
 	}

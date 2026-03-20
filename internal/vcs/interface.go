@@ -21,7 +21,7 @@ type VCS interface {
 	CreateContext(name string, base string) (*Context, error)
 	SwitchContext(name string) error
 	ListContexts() ([]Context, error)
-	RemoveContext(name string) error
+	RemoveContext(name string, force bool) error
 	CurrentContext() (*Context, error)
 
 	// Init initializes a new repository (bare or non-bare).
