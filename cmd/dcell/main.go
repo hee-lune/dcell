@@ -331,6 +331,8 @@ func aiCmd() *cobra.Command {
 			}
 			
 			projectRoot := filepath.Dir(barePath)
+			// ctxName may contain "/" (e.g., "feature/devcontainer")
+			// worktree path uses the original branch name as-is
 			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
 			
 			// Create context loader for layered context
