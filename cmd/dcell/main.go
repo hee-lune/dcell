@@ -310,7 +310,27 @@ func aiCmd() *cobra.Command {
 				return err
 			}
 
-			ctxPath := filepath.Join(repoPath, "..", ctxName)
+			// Find .bare directory and construct ctxPath
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return fmt.Errorf("failed to detect repository: %w", err)
+			}
+			
+			// Get project root from .bare path
+			var barePath string
+			switch typedV := v.(type) {
+			case *vcs.Git:
+				barePath = typedV.RepoPath
+			case *vcs.JJ:
+				barePath = typedV.RepoPath
+			}
+			
+			if barePath == "" {
+				return fmt.Errorf("could not determine repository path")
+			}
+			
+			projectRoot := filepath.Dir(barePath)
+			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
 			
 			fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
 			
