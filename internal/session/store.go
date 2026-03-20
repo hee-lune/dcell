@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -39,9 +40,15 @@ func NewStore(baseDir string) *Store {
 	}
 }
 
+// sanitizeContextName replaces path separators to create safe filenames.
+func sanitizeContextName(ctxName string) string {
+	return strings.ReplaceAll(ctxName, "/", "-")
+}
+
 // GetSessionDir returns the directory for a context's session.
 func (s *Store) GetSessionDir(ctxName string) string {
-	return filepath.Join(s.BaseDir, ctxName)
+	safeName := sanitizeContextName(ctxName)
+	return filepath.Join(s.BaseDir, safeName)
 }
 
 // Create creates a new session for a context.

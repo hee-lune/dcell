@@ -42,6 +42,7 @@ func init() {
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
+	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(devcontainerCmd())
 	rootCmd.AddCommand(snapshotCmd())
 }
@@ -329,11 +330,41 @@ func aiCmd() *cobra.Command {
 				return err
 			}
 
-			ctxPath := filepath.Join(repoPath, "..", ctxName)
+			// Find .bare directory and construct ctxPath
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return fmt.Errorf("failed to detect repository: %w", err)
+			}
+			
+			// Get project root from .bare path
+			var barePath string
+			switch typedV := v.(type) {
+			case *vcs.Git:
+				barePath = typedV.RepoPath
+			case *vcs.JJ:
+				barePath = typedV.RepoPath
+			}
+			
+			if barePath == "" {
+				return fmt.Errorf("could not determine repository path")
+			}
+			
+			projectRoot := filepath.Dir(barePath)
+			// ctxName may contain "/" (e.g., "feature/devcontainer")
+			// worktree path uses the original branch name as-is
+			ctxPath := filepath.Join(projectRoot, "worktrees", ctxName)
+			
+			// Create context loader for layered context
+			globalDir := filepath.Dir(config.GlobalConfigPath())
+			loader := session.NewContextLoader(
+				globalDir,                  // Global: ~/.config/dcell/
+				projectRoot,                // Project: dcell/
+				filepath.Dir(sess.ContextPath), // Session: .dcell-session/
+			)
 			
 			fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
 			
-			return ai.Start(ctxPath, sess)
+			return ai.Start(ctxPath, sess, loader)
 		},
 	}
 

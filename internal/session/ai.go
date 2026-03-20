@@ -2,18 +2,20 @@ package session
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // AI defines the interface for AI assistants.
 type AI interface {
 	Name() string
 	IsAvailable() bool
-	Start(ctxPath string, session *Session) error
-	Continue(ctxPath string, session *Session) error
-	Execute(ctxPath string, session *Session, prompt string) error
+	Start(ctxPath string, session *Session, loader *ContextLoader) error
+	Continue(ctxPath string, session *Session, loader *ContextLoader) error
+	Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error
 }
 
 // Claude implements AI interface for Claude Code.
@@ -31,19 +33,29 @@ func (c *Claude) IsAvailable() bool {
 }
 
 // Start starts a new Claude Code session.
-func (c *Claude) Start(ctxPath string, session *Session) error {
-	// Load context into Claude
+func (c *Claude) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
 	var contextContent string
-	
-	if data, err := os.ReadFile(session.ContextPath); err == nil {
-		contextContent += string(data) + "\n\n"
-	}
-	if data, err := os.ReadFile(session.TodoPath); err == nil {
-		contextContent += string(data) + "\n\n"
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
 	}
 
-	// Write a temporary file with context
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-%s-prompt.txt", session.ContextName))
+	// Fallback to session files if no layered context
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+	}
+
+	// Write a temporary file with context (sanitize filename)
+	safeName := strings.ReplaceAll(session.ContextName, "/", "-")
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-%s-prompt.txt", safeName))
 	if err := os.WriteFile(tmpFile, []byte(contextContent), 0644); err != nil {
 		return fmt.Errorf("failed to write prompt file: %w", err)
 	}
@@ -60,13 +72,13 @@ func (c *Claude) Start(ctxPath string, session *Session) error {
 }
 
 // Continue continues an existing Claude Code session.
-func (c *Claude) Continue(ctxPath string, session *Session) error {
+func (c *Claude) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
 	// For now, just start fresh - Claude maintains its own history
-	return c.Start(ctxPath, session)
+	return c.Start(ctxPath, session, loader)
 }
 
 // Execute sends a one-off command to Claude.
-func (c *Claude) Execute(ctxPath string, session *Session, prompt string) error {
+func (c *Claude) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
 	cmd := exec.Command("claude", "--prompt", "-")
 	cmd.Dir = ctxPath
 	cmd.Stdin = os.Stdin
@@ -102,14 +114,24 @@ func (k *Kimi) IsAvailable() bool {
 }
 
 // Start starts a new Kimi session.
-func (k *Kimi) Start(ctxPath string, session *Session) error {
+func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
 	var contextContent string
-	
-	if data, err := os.ReadFile(session.ContextPath); err == nil {
-		contextContent += string(data) + "\n\n"
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
 	}
-	if data, err := os.ReadFile(session.TodoPath); err == nil {
-		contextContent += string(data) + "\n\n"
+
+	// Fallback to session files
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
 	}
 
 	// Start kimi in interactive mode
@@ -118,7 +140,7 @@ func (k *Kimi) Start(ctxPath string, session *Session) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Create pipe for stdin
+	// Create pipe for stdin to send context first, then user input
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
@@ -129,30 +151,98 @@ func (k *Kimi) Start(ctxPath string, session *Session) error {
 		return fmt.Errorf("failed to start kimi: %w", err)
 	}
 
-	// Send context first, then relay user input
+	// Send context as first input in a goroutine
 	go func() {
-		// Send context as initial input
+		defer stdin.Close()
+		// Send context
 		io.WriteString(stdin, contextContent)
 		io.WriteString(stdin, "\n\n上記は現在のプロジェクトのコンテキストです。開発を続けてください。\n\n")
-		
-		// Relay user input from os.Stdin
+		// Then copy user input
 		io.Copy(stdin, os.Stdin)
-		
-		// Close stdin only when user input ends (Ctrl+D) or process exits
-		stdin.Close()
 	}()
 
 	return cmd.Wait()
 }
 
-// Continue continues an existing Kimi session.
-func (k *Kimi) Continue(ctxPath string, session *Session) error {
-	return k.Start(ctxPath, session)
+// Codex implements AI interface for OpenAI Codex CLI.
+type Codex struct{}
+
+// Name returns the AI name.
+func (c *Codex) Name() string {
+	return "codex"
 }
 
-// Execute sends a one-off command to Kimi.
-func (k *Kimi) Execute(ctxPath string, session *Session, prompt string) error {
-	cmd := exec.Command("kimi", "-c", prompt)
+// IsAvailable checks if Codex CLI is installed.
+func (c *Codex) IsAvailable() bool {
+	_, err := exec.LookPath("codex")
+	return err == nil
+}
+
+// Start starts a new Codex session.
+func (c *Codex) Start(ctxPath string, session *Session, loader *ContextLoader) error {
+	// Load layered context
+	var contextContent string
+	if loader != nil {
+		loadedCtx, err := loader.LoadContext()
+		if err == nil && loadedCtx != "" {
+			contextContent = loadedCtx
+		}
+	}
+
+	// Fallback to session files
+	if contextContent == "" {
+		if data, err := os.ReadFile(session.ContextPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+		if data, err := os.ReadFile(session.TodoPath); err == nil {
+			contextContent += string(data) + "\n\n"
+		}
+	}
+
+	// Write a temporary file with context
+	safeName := strings.ReplaceAll(session.ContextName, "/", "-")
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("dcell-codex-%s-prompt.txt", safeName))
+	if err := os.WriteFile(tmpFile, []byte(contextContent), 0644); err != nil {
+		return fmt.Errorf("failed to write prompt file: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	// Start Codex with context
+	// Codex supports --image flag for context, but we'll use stdin for text
+	cmd := exec.Command("codex")
+	cmd.Dir = ctxPath
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Create pipe for stdin to send context first
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start codex: %w", err)
+	}
+
+	// Send context as first input
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, contextContent)
+		io.WriteString(stdin, "\n\n---\n\nAbove is the project context. Please continue development.\n\n")
+		io.Copy(stdin, os.Stdin)
+	}()
+
+	return cmd.Wait()
+}
+
+// Continue continues an existing Codex session.
+func (c *Codex) Continue(ctxPath string, session *Session, loader *ContextLoader) error {
+	return c.Start(ctxPath, session, loader)
+}
+
+// Execute sends a one-off command to Codex.
+func (c *Codex) Execute(ctxPath string, session *Session, prompt string, loader *ContextLoader) error {
+	cmd := exec.Command("codex", "-q", prompt)
 	cmd.Dir = ctxPath
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -168,6 +258,8 @@ func GetAI(name string) (AI, error) {
 		return &Claude{}, nil
 	case "kimi":
 		return &Kimi{}, nil
+	case "codex":
+		return &Codex{}, nil
 	default:
 		return nil, fmt.Errorf("unknown AI: %s", name)
 	}
@@ -175,7 +267,7 @@ func GetAI(name string) (AI, error) {
 
 // DetectAI tries to detect available AI tools.
 func DetectAI() (AI, error) {
-	aiList := []AI{&Claude{}, &Kimi{}}
+	aiList := []AI{&Claude{}, &Kimi{}, &Codex{}}
 	
 	for _, ai := range aiList {
 		if ai.IsAvailable() {
@@ -183,5 +275,5 @@ func DetectAI() (AI, error) {
 		}
 	}
 	
-	return nil, fmt.Errorf("no AI tool found (install claude or kimi)")
+	return nil, fmt.Errorf("no AI tool found (install claude, kimi, or codex)")
 }
