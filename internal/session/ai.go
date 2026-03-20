@@ -115,12 +115,41 @@ func (k *Kimi) IsAvailable() bool {
 
 // Start starts a new Kimi session.
 func (k *Kimi) Start(ctxPath string, session *Session, loader *ContextLoader) error {
-	// Kimi CLI automatically reads AGENTS.md if it exists in the working directory
-	// ${KIMI_AGENTS_MD} is expanded to the content of AGENTS.md in system prompts
-	// We create AGENTS.md in Store.Create() with context and todo content
+	// Create agent spec file in .dcell-session/ (gitignored)
+	sessionDir := filepath.Dir(session.ContextPath) // .dcell-session/
+	agentPath := filepath.Join(sessionDir, "dcell-agent.yaml")
+	
+	// Ensure agent spec exists
+	if _, err := os.Stat(agentPath); os.IsNotExist(err) {
+		content := fmt.Sprintf(`version: 1
+agent:
+  name: dcell-%s
+  extend: default
+  system_prompt: |
+    # dcell Session: %s
+    
+    ## コンテキストファイル
+    
+    このセッションの作業を開始する前に、必ず以下のファイルを ReadFile ツールで読み込んでください：
+    
+    1. **Session Context**: %s/context.md
+       - このセッションの目的、目標、制約事項
+    
+    2. **Todo List**: %s/todo.md
+       - 現在のタスクリスト（進行中、保留中、完了済み）
+    
+    3. **Decisions**: %s/decisions.md
+       - アーキテクチャ決定記録（ADR）
+    
+    ## 指示
+    
+    上記のコンテキストファイルを読み込んだ上で、開発を続けてください。
+`, session.ContextName, session.ContextName, sessionDir, sessionDir, sessionDir)
+		os.WriteFile(agentPath, []byte(content), 0644)
+	}
 
-	// Start kimi in interactive mode
-	cmd := exec.Command("kimi")
+	// Start kimi with agent file from .dcell-session/
+	cmd := exec.Command("kimi", "--agent-file", agentPath)
 	cmd.Dir = ctxPath
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

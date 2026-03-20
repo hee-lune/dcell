@@ -206,36 +206,26 @@ func (s *Store) createContextFile(path string, ctxName string) error {
 func (s *Store) CreateAGENTSMD(ctxPath string, ctxName string) error {
 	agentsPath := filepath.Join(ctxPath, "AGENTS.md")
 	
-	// Read context and todo content if they exist
-	var contextContent, todoContent string
-	contextFile := filepath.Join(ctxPath, ".dcell-session", "context.md")
-	todoFile := filepath.Join(ctxPath, ".dcell-session", "todo.md")
-	
-	if data, err := os.ReadFile(contextFile); err == nil {
-		contextContent = string(data)
-	}
-	if data, err := os.ReadFile(todoFile); err == nil {
-		todoContent = string(data)
-	}
-	
-	content := fmt.Sprintf(`# Project Context: %s
+	content := fmt.Sprintf(`# dcell Session: %s
 
-## Session Information
-- **Context**: %s
-- **Created**: %s
+## コンテキストファイル
 
-## Project Context
+以下のファイルを読み込んでください：
 
-%s
+1. **Session Context**: ./.dcell-session/context.md
+   - このセッションの目的、目標、制約事項
 
-## Current Tasks
+2. **Todo List**: ./.dcell-session/todo.md
+   - 現在のタスクリスト（進行中、保留中、完了済み）
 
-%s
+3. **Decisions**: ./.dcell-session/decisions.md
+   - アーキテクチャ決定記録（ADR）
 
-## Instructions
+## 指示
 
-上記は現在のプロジェクトのコンテキストです。この情報を参考にして開発を続けてください。
-`, ctxName, ctxName, time.Now().Format(time.RFC3339), contextContent, todoContent)
+上記のコンテキストファイルを読み込んだ上で、開発を続けてください。
+セッション作成時刻: %s
+`, ctxName, time.Now().Format("2006-01-02 15:04"))
 
 	return os.WriteFile(agentsPath, []byte(content), 0644)
 }
