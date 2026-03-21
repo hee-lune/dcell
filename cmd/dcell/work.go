@@ -204,6 +204,18 @@ func workCmd() *cobra.Command {
 				fmt.Printf("   ✓ セッション '%s' を作成しました\n", sessionName)
 			}
 			
+			// Step 9: Launch AI if requested
+			if aiType != "" {
+				fmt.Printf("🤖 AIを起動します...\n")
+				aiCmd := exec.Command("dcell", "ai", ctxName, "--type", aiType)
+				aiCmd.Stdin = os.Stdin
+				aiCmd.Stdout = os.Stdout
+				aiCmd.Stderr = os.Stderr
+				if err := aiCmd.Run(); err != nil {
+					fmt.Fprintf(os.Stderr, "   ⚠ AI起動に失敗: %v\n", err)
+				}
+			}
+			
 			fmt.Printf("\n🚀 tmuxに接続します... (exitでdcellに戻る)\n")
 			
 			// Attach to tmux session (this blocks until user exits tmux)

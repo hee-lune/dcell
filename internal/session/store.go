@@ -99,12 +99,6 @@ func (s *Store) Create(ctxName string, vcs string, ctxPath string) (*Session, er
 		return nil, err
 	}
 
-	// Create AGENTS.md for Kimi CLI
-	if err := s.CreateAGENTSMD(ctxPath, ctxName); err != nil {
-		// Non-fatal error
-		fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
-	}
-
 	return session, nil
 }
 

@@ -383,6 +383,11 @@ func aiCmd() *cobra.Command {
 				}
 			}
 			
+			// Create AGENTS.md for AI assistant
+			if err := store.CreateAGENTSMD(ctxPath, ctxName); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
+			}
+			
 			// Create context loader for layered context
 			globalDir := filepath.Dir(config.GlobalConfigPath())
 			loader := session.NewContextLoader(
