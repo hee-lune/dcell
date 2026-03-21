@@ -41,7 +41,6 @@ func init() {
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(createCmd())
 	rootCmd.AddCommand(workCmd())
-	rootCmd.AddCommand(switchCmd())
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
@@ -160,86 +159,6 @@ func createCmd() *cobra.Command {
 	return cmd
 }
 
-func switchCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "switch <name>",
-		Short: "開発コンテキストに切り替え",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctxName := args[0]
-
-			repoPath, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-
-			// Load config for hooks
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
-			// Load VCS
-			v, err := vcs.NewAuto(repoPath)
-			if err != nil {
-				return err
-			}
-
-			// Get project root and worktree path for hooks
-			projectRoot := getProjectRoot(v)
-			if projectRoot == "" {
-				projectRoot = repoPath
-			}
-			ctxPath := filepath.Join(projectRoot, ctxName)
-
-			// Run pre-switch hooks
-			if len(cfg.Hooks.PreSwitch) > 0 {
-				hookCtx := &hooks.Context{
-					ProjectRoot:  projectRoot,
-					WorktreePath: ctxPath,
-					ContextName:  ctxName,
-					VCS:          v.Name(),
-				}
-				runner := hooks.NewRunner(hookCtx)
-				if err := runner.ExecutePreSwitch(cfg.Hooks.PreSwitch); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: Pre-switch hooks failed: %v\n", err)
-				}
-			}
-
-			fmt.Printf("コンテキスト '%s' に切り替え中...\n", ctxName)
-
-			if err := v.SwitchContext(ctxName); err != nil {
-				return err
-			}
-
-			// Update session
-			store := session.NewStore(projectRoot)
-			if err := store.Update(ctxName); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Session update failed: %v\n", err)
-			}
-
-			// Run post-switch hooks
-			if len(cfg.Hooks.PostSwitch) > 0 {
-				hookCtx := &hooks.Context{
-					ProjectRoot:  projectRoot,
-					WorktreePath: ctxPath,
-					ContextName:  ctxName,
-					VCS:          v.Name(),
-				}
-				runner := hooks.NewRunner(hookCtx)
-				if err := runner.ExecutePostSwitch(cfg.Hooks.PostSwitch); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: Post-switch hooks failed: %v\n", err)
-				}
-			}
-
-			fmt.Printf("切り替え完了: %s\n", ctxPath)
-			fmt.Println("以下のコマンドでディレクトリを変更してください：")
-			fmt.Printf("  cd %s\n", ctxPath)
-
-			return nil
-		},
-	}
-}
 
 func listCmd() *cobra.Command {
 	return &cobra.Command{
