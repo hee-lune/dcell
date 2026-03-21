@@ -52,39 +52,6 @@ func (r *Runner) ExecutePostCreate(actions []Action) error {
 	return nil
 }
 
-// ExecutePreSwitch runs all pre-switch hooks.
-func (r *Runner) ExecutePreSwitch(actions []Action) error {
-	if len(actions) == 0 {
-		return nil
-	}
-
-	fmt.Fprintf(r.stdout, "Running %d pre-switch hook(s)...\n", len(actions))
-
-	for i, action := range actions {
-		if err := r.executeAction(i+1, len(actions), &action); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ExecutePostSwitch runs all post-switch hooks.
-func (r *Runner) ExecutePostSwitch(actions []Action) error {
-	if len(actions) == 0 {
-		return nil
-	}
-
-	fmt.Fprintf(r.stdout, "Running %d post-switch hook(s)...\n", len(actions))
-
-	for i, action := range actions {
-		if err := r.executeAction(i+1, len(actions), &action); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 // ExecutePreRemove runs all pre-remove hooks.
 func (r *Runner) ExecutePreRemove(actions []Action) error {

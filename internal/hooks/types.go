@@ -82,12 +82,6 @@ type Config struct {
 	// PostCreate runs after creating a new worktree
 	PostCreate []Action `toml:"post-create"`
 
-	// PreSwitch runs before switching contexts
-	PreSwitch []Action `toml:"pre-switch"`
-
-	// PostSwitch runs after switching contexts
-	PostSwitch []Action `toml:"post-switch"`
-
 	// PreRemove runs before removing a context
 	PreRemove []Action `toml:"pre-remove"`
 }

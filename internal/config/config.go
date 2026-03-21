@@ -138,12 +138,6 @@ func (c *Config) Merge(other *Config) {
 	if len(other.Hooks.PostCreate) > 0 {
 		c.Hooks.PostCreate = other.Hooks.PostCreate
 	}
-	if len(other.Hooks.PreSwitch) > 0 {
-		c.Hooks.PreSwitch = other.Hooks.PreSwitch
-	}
-	if len(other.Hooks.PostSwitch) > 0 {
-		c.Hooks.PostSwitch = other.Hooks.PostSwitch
-	}
 	if len(other.Hooks.PreRemove) > 0 {
 		c.Hooks.PreRemove = other.Hooks.PreRemove
 	}
