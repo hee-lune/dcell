@@ -173,10 +173,37 @@ func switchCmd() *cobra.Command {
 				return err
 			}
 
+			// Load config for hooks
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
 			// Load VCS
 			v, err := vcs.NewAuto(repoPath)
 			if err != nil {
 				return err
+			}
+
+			// Get project root and worktree path for hooks
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			ctxPath := filepath.Join(projectRoot, ctxName)
+
+			// Run pre-switch hooks
+			if len(cfg.Hooks.PreSwitch) > 0 {
+				hookCtx := &hooks.Context{
+					ProjectRoot:  projectRoot,
+					WorktreePath: ctxPath,
+					ContextName:  ctxName,
+					VCS:          v.Name(),
+				}
+				runner := hooks.NewRunner(hookCtx)
+				if err := runner.ExecutePreSwitch(cfg.Hooks.PreSwitch); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Pre-switch hooks failed: %v\n", err)
+				}
 			}
 
 			fmt.Printf("コンテキスト '%s' に切り替え中...\n", ctxName)
@@ -186,16 +213,25 @@ func switchCmd() *cobra.Command {
 			}
 
 			// Update session
-			projectRoot := getProjectRoot(v)
-			if projectRoot == "" {
-				projectRoot = repoPath
-			}
 			store := session.NewStore(projectRoot)
 			if err := store.Update(ctxName); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Session update failed: %v\n", err)
 			}
 
-			ctxPath := filepath.Join(repoPath, "..", ctxName)
+			// Run post-switch hooks
+			if len(cfg.Hooks.PostSwitch) > 0 {
+				hookCtx := &hooks.Context{
+					ProjectRoot:  projectRoot,
+					WorktreePath: ctxPath,
+					ContextName:  ctxName,
+					VCS:          v.Name(),
+				}
+				runner := hooks.NewRunner(hookCtx)
+				if err := runner.ExecutePostSwitch(cfg.Hooks.PostSwitch); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Post-switch hooks failed: %v\n", err)
+				}
+			}
+
 			fmt.Printf("切り替え完了: %s\n", ctxPath)
 			fmt.Println("以下のコマンドでディレクトリを変更してください：")
 			fmt.Printf("  cd %s\n", ctxPath)
@@ -262,12 +298,39 @@ func removeCmd() *cobra.Command {
 				return err
 			}
 
+			// Load config for hooks
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
 			v, err := vcs.NewAuto(repoPath)
 			if err != nil {
 				return err
 			}
 
+			// Get project root and worktree path for hooks
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			ctxPath := filepath.Join(projectRoot, ctxName)
+
 			fmt.Printf("コンテキスト '%s' を削除中...\n", ctxName)
+
+			// Run pre-remove hooks
+			if len(cfg.Hooks.PreRemove) > 0 {
+				hookCtx := &hooks.Context{
+					ProjectRoot:  projectRoot,
+					WorktreePath: ctxPath,
+					ContextName:  ctxName,
+					VCS:          v.Name(),
+				}
+				runner := hooks.NewRunner(hookCtx)
+				if err := runner.ExecutePreRemove(cfg.Hooks.PreRemove); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Pre-remove hooks failed: %v\n", err)
+				}
+			}
 
 			// Cleanup Docker
 			composeMgr := docker.NewComposeManager(repoPath)
@@ -284,10 +347,6 @@ func removeCmd() *cobra.Command {
 			}
 
 			// Remove session
-			projectRoot := getProjectRoot(v)
-			if projectRoot == "" {
-				projectRoot = repoPath
-			}
 			store := session.NewStore(projectRoot)
 			store.Remove(ctxName)
 
