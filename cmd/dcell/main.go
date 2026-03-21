@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/heelune/dcell/internal/config"
@@ -12,6 +13,7 @@ import (
 	"github.com/heelune/dcell/internal/docker"
 	"github.com/heelune/dcell/internal/hooks"
 	"github.com/heelune/dcell/internal/session"
+	"github.com/heelune/dcell/internal/tmux"
 	"github.com/heelune/dcell/internal/vcs"
 )
 
@@ -41,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(createCmd())
 	rootCmd.AddCommand(workCmd())
+	rootCmd.AddCommand(attachCmd())
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
@@ -182,7 +185,22 @@ func listCmd() *cobra.Command {
 
 			current, _ := v.CurrentContext()
 
+			// Get tmux sessions
+			tmuxSessions := make(map[string]tmux.Session)
+			if tmux.HasTmux() {
+				sessions, _ := tmux.ListSessions()
+				for _, s := range sessions {
+					// Strip "dcell-" prefix to get context name
+					if strings.HasPrefix(s.Name, "dcell-") {
+						ctxName := strings.TrimPrefix(s.Name, "dcell-")
+						tmuxSessions[ctxName] = s
+					}
+				}
+			}
+
 			fmt.Printf("開発コンテキスト一覧 (%s):\n\n", v.Name())
+			fmt.Printf("%-20s %-12s %-10s\n", "CONTEXT", "TMUX", "STATUS")
+			fmt.Println(strings.Repeat("-", 50))
 			
 			for _, ctx := range contexts {
 				prefix := "  "
@@ -190,12 +208,23 @@ func listCmd() *cobra.Command {
 					prefix = "* "
 				}
 				
-				fmt.Printf("%s%s", prefix, ctx.Name)
-				if ctx.BaseBranch != "" {
-					fmt.Printf(" (from %s)", ctx.BaseBranch)
+				session, hasTmux := tmuxSessions[ctx.Name]
+				var tmuxStatus, status string
+				if hasTmux {
+					tmuxStatus = "session"
+					if session.Attached {
+						status = "attached"
+					} else {
+						status = "detached"
+					}
+				} else {
+					tmuxStatus = "-"
+					status = "idle"
 				}
-				fmt.Printf("\n  %s\n\n", ctx.Path)
+				
+				fmt.Printf("%s%-18s %-12s %-10s\n", prefix, ctx.Name, tmuxStatus, status)
 			}
+			fmt.Println()
 
 			return nil
 		},
@@ -530,4 +559,63 @@ func composeCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&ctxName, "context", "c", "", "コンテキスト名（指定しない場合はカレントディレクトリから推定）")
 
 	return cmd
+}
+
+func attachCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "attach <name>",
+		Short: "既存のコンテキストにtmuxで接続",
+		Long: `既存の開発コンテキストにtmuxセッションで接続します。
+コンテキストが存在しない場合はエラーになります。`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctxName := args[0]
+
+			repoPath, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			// Check tmux
+			if !tmux.HasTmux() {
+				return fmt.Errorf("tmuxがインストールされていません")
+			}
+
+			// Detect repository
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return err
+			}
+
+			// Get project root
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+
+			// Check if worktree exists
+			ctxPath := filepath.Join(projectRoot, ctxName)
+			if _, err := os.Stat(ctxPath); os.IsNotExist(err) {
+				return fmt.Errorf("コンテキスト '%s' が見つかりません: %s", ctxName, ctxPath)
+			}
+
+			sessionName := tmux.GetSessionForContext(ctxName)
+
+			// Create session if not exists
+			if !tmux.SessionExists(sessionName) {
+				fmt.Printf("セッション '%s' を新規作成します...\n", sessionName)
+				if err := tmux.CreateSession(sessionName, ctxPath); err != nil {
+					return fmt.Errorf("tmuxセッションの作成に失敗: %w", err)
+				}
+			}
+
+			fmt.Printf("🚀 コンテキスト '%s' に接続します...\n", ctxName)
+
+			// Attach to tmux session
+			if tmux.InTmux() {
+				return tmux.SwitchSession(sessionName)
+			}
+			return tmux.AttachSession(sessionName)
+		},
+	}
 }

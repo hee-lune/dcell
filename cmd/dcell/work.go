@@ -10,6 +10,7 @@ import (
 	"github.com/heelune/dcell/internal/config"
 	"github.com/heelune/dcell/internal/hooks"
 	"github.com/heelune/dcell/internal/session"
+	"github.com/heelune/dcell/internal/tmux"
 	"github.com/heelune/dcell/internal/vcs"
 )
 
@@ -178,16 +179,39 @@ func workCmd() *cobra.Command {
 				}
 			}
 
-			// Summary
-			fmt.Printf("\n✅ ワーク '%s' の準備ができました！\n", ctxName)
-			fmt.Printf("   パス: %s\n", ctx.Path)
-			if prompt != "" {
-				fmt.Printf("   プロンプト: %s\n", prompt)
+			// Step 8: Create tmux session and attach
+			fmt.Printf("🖥️  tmuxセッション作成中...\n")
+			sessionName := tmux.GetSessionForContext(ctxName)
+			
+			if !tmux.HasTmux() {
+				fmt.Fprintf(os.Stderr, "   ⚠ tmuxがインストールされていません\n")
+				fmt.Printf("\n✅ ワーク '%s' の準備ができました！\n", ctxName)
+				fmt.Printf("   パス: %s\n", ctx.Path)
+				fmt.Printf("   cd %s\n", ctx.Path)
+				return nil
 			}
-			fmt.Printf("\n次のステップ:\n")
-			fmt.Printf("   cd %s\n", ctx.Path)
-
-			return nil
+			
+			if tmux.SessionExists(sessionName) {
+				fmt.Printf("   ✓ 既存セッション '%s' に接続します\n", sessionName)
+			} else {
+				if err := tmux.CreateSession(sessionName, ctx.Path); err != nil {
+					fmt.Fprintf(os.Stderr, "   ⚠ tmuxセッション作成に失敗: %v\n", err)
+					fmt.Printf("\n✅ ワーク '%s' の準備ができました！\n", ctxName)
+					fmt.Printf("   パス: %s\n", ctx.Path)
+					fmt.Printf("   cd %s\n", ctx.Path)
+					return nil
+				}
+				fmt.Printf("   ✓ セッション '%s' を作成しました\n", sessionName)
+			}
+			
+			fmt.Printf("\n🚀 tmuxに接続します... (exitでdcellに戻る)\n")
+			
+			// Attach to tmux session (this blocks until user exits tmux)
+			if tmux.InTmux() {
+				// Already in tmux, switch to the session
+				return tmux.SwitchSession(sessionName)
+			}
+			return tmux.AttachSession(sessionName)
 		},
 	}
 
