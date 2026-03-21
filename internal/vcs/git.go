@@ -166,6 +166,11 @@ func (g *Git) ListContexts() ([]Context, error) {
 
 		if strings.HasPrefix(line, "worktree ") {
 			currentCtx.Path = strings.TrimPrefix(line, "worktree ")
+			// Skip bare repository itself
+			if currentCtx.Path == g.RepoPath {
+				currentCtx = nil
+				continue
+			}
 			// Derive name from path
 			currentCtx.Name = filepath.Base(currentCtx.Path)
 		} else if strings.HasPrefix(line, "branch ") {
