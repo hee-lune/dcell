@@ -11,6 +11,7 @@ import (
 	"github.com/heelune/dcell/internal/config"
 	"github.com/heelune/dcell/internal/devcontainer"
 	"github.com/heelune/dcell/internal/docker"
+	"github.com/heelune/dcell/internal/gh"
 	"github.com/heelune/dcell/internal/hooks"
 	"github.com/heelune/dcell/internal/session"
 	"github.com/heelune/dcell/internal/tmux"
@@ -47,6 +48,8 @@ func init() {
 	rootCmd.AddCommand(listCmd())
 	rootCmd.AddCommand(removeCmd())
 	rootCmd.AddCommand(aiCmd())
+	rootCmd.AddCommand(prCmd())
+	rootCmd.AddCommand(submitCmd())
 	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(devcontainerCmd())
 	rootCmd.AddCommand(snapshotCmd())
@@ -190,7 +193,6 @@ func listCmd() *cobra.Command {
 			if tmux.HasTmux() {
 				sessions, _ := tmux.ListSessions()
 				for _, s := range sessions {
-					// Strip "dcell-" prefix to get context name
 					if strings.HasPrefix(s.Name, "dcell-") {
 						ctxName := strings.TrimPrefix(s.Name, "dcell-")
 						tmuxSessions[ctxName] = s
@@ -198,9 +200,22 @@ func listCmd() *cobra.Command {
 				}
 			}
 
+			// Get PR info if gh is available
+			var prs map[string]*gh.PR
+			if gh.HasGH() {
+				client, err := gh.New()
+				if err == nil {
+					prList, _ := client.ListPRs("open")
+					prs = make(map[string]*gh.PR)
+					for i := range prList {
+						prs[prList[i].HeadRef] = &prList[i]
+					}
+				}
+			}
+
 			fmt.Printf("開発コンテキスト一覧 (%s):\n\n", v.Name())
-			fmt.Printf("%-20s %-12s %-10s\n", "CONTEXT", "TMUX", "STATUS")
-			fmt.Println(strings.Repeat("-", 50))
+			fmt.Printf("%-18s %-10s %-8s %-30s\n", "CONTEXT", "TMUX", "PR", "TITLE")
+			fmt.Println(strings.Repeat("-", 70))
 			
 			for _, ctx := range contexts {
 				prefix := "  "
@@ -209,20 +224,30 @@ func listCmd() *cobra.Command {
 				}
 				
 				session, hasTmux := tmuxSessions[ctx.Name]
-				var tmuxStatus, status string
+				var tmuxStatus string
 				if hasTmux {
-					tmuxStatus = "session"
 					if session.Attached {
-						status = "attached"
+						tmuxStatus = "attached"
 					} else {
-						status = "detached"
+						tmuxStatus = "detached"
 					}
 				} else {
 					tmuxStatus = "-"
-					status = "idle"
+				}
+
+				var prNum, prTitle string
+				if pr, ok := prs[ctx.Name]; ok {
+					prNum = fmt.Sprintf("#%d", pr.Number)
+					prTitle = pr.Title
+					if len(prTitle) > 28 {
+						prTitle = prTitle[:25] + "..."
+					}
+				} else {
+					prNum = "-"
+					prTitle = ""
 				}
 				
-				fmt.Printf("%s%-18s %-12s %-10s\n", prefix, ctx.Name, tmuxStatus, status)
+				fmt.Printf("%s%-16s %-10s %-8s %s\n", prefix, ctx.Name, tmuxStatus, prNum, prTitle)
 			}
 			fmt.Println()
 
@@ -623,4 +648,300 @@ func attachCmd() *cobra.Command {
 			return tmux.AttachSession(sessionName)
 		},
 	}
+}
+
+func prCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pr",
+		Short: "GitHub PR operations",
+	}
+
+	cmd.AddCommand(prCheckoutCmd())
+	cmd.AddCommand(prListCmd())
+	cmd.AddCommand(prViewCmd())
+
+	return cmd
+}
+
+func prCheckoutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "checkout <number>",
+		Short: "PRをチェックアウトしてworktree作成",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !gh.HasGH() {
+				return fmt.Errorf("gh CLI is not installed")
+			}
+
+			var prNum int
+			fmt.Sscanf(args[0], "%d", &prNum)
+			if prNum == 0 {
+				return fmt.Errorf("invalid PR number: %s", args[0])
+			}
+
+			client, err := gh.New()
+			if err != nil {
+				return err
+			}
+
+			// Get PR info
+			pr, err := client.GetPR(prNum)
+			if err != nil {
+				return fmt.Errorf("failed to get PR #%d: %w", prNum, err)
+			}
+
+			ctxName := pr.HeadRef
+			fmt.Printf("PR #%d (%s) をチェックアウトします...\n", prNum, ctxName)
+
+			// Use existing create flow but with PR branch
+			repoPath, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return err
+			}
+
+			// Check if already exists
+			contexts, _ := v.ListContexts()
+			for _, ctx := range contexts {
+				if ctx.Name == ctxName {
+					fmt.Printf("コンテキスト '%s' は既に存在します。attachします...\n", ctxName)
+					// Attach to it
+					projectRoot := getProjectRoot(v)
+					if projectRoot == "" {
+						projectRoot = repoPath
+					}
+					sessionName := tmux.GetSessionForContext(ctxName)
+					if tmux.InTmux() {
+						return tmux.SwitchSession(sessionName)
+					}
+					return tmux.AttachSession(sessionName)
+				}
+			}
+
+			// Fetch PR branch
+			projectRoot := getProjectRoot(v)
+			if projectRoot == "" {
+				projectRoot = repoPath
+			}
+			ctxPath := filepath.Join(projectRoot, ctxName)
+
+			// Use gh pr checkout to fetch the branch
+			fetchCmd := exec.Command("gh", "pr", "checkout", args[0], "--branch", ctxName)
+			fetchCmd.Dir = v.(*vcs.Git).RepoPath
+			if out, err := fetchCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to checkout PR: %w\n%s", err, out)
+			}
+
+			// Add worktree for the branch
+			wtCmd := exec.Command("git", "worktree", "add", ctxPath, ctxName)
+			wtCmd.Dir = v.(*vcs.Git).RepoPath
+			if out, err := wtCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to create worktree: %w\n%s", err, out)
+			}
+
+			fmt.Printf("✅ PR #%d をコンテキスト '%s' として作成しました\n", prNum, ctxName)
+			fmt.Printf("   パス: %s\n", ctxPath)
+
+			// Create tmux session and attach
+			sessionName := tmux.GetSessionForContext(ctxName)
+			if !tmux.SessionExists(sessionName) {
+				tmux.CreateSession(sessionName, ctxPath)
+			}
+
+			fmt.Printf("🚀 tmuxに接続します...\n")
+			if tmux.InTmux() {
+				return tmux.SwitchSession(sessionName)
+			}
+			return tmux.AttachSession(sessionName)
+		},
+	}
+}
+
+func prListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List open PRs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !gh.HasGH() {
+				return fmt.Errorf("gh CLI is not installed")
+			}
+
+			client, err := gh.New()
+			if err != nil {
+				return err
+			}
+
+			prs, err := client.ListPRs("open")
+			if err != nil {
+				return err
+			}
+
+			fmt.Println("Open Pull Requests:")
+			fmt.Println(strings.Repeat("-", 70))
+			for _, pr := range prs {
+				draft := ""
+				if pr.IsDraft {
+					draft = " [DRAFT]"
+				}
+				fmt.Printf("#%-5d %-20s %s%s\n", pr.Number, pr.HeadRef, pr.Title, draft)
+			}
+
+			return nil
+		},
+	}
+}
+
+func prViewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "view [number]",
+		Short: "View PR in browser",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !gh.HasGH() {
+				return fmt.Errorf("gh CLI is not installed")
+			}
+
+			client, err := gh.New()
+			if err != nil {
+				return err
+			}
+
+			var prNum int
+			if len(args) > 0 {
+				fmt.Sscanf(args[0], "%d", &prNum)
+			}
+
+			return client.ViewPR(prNum)
+		},
+	}
+}
+
+func submitCmd() *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "現在のコンテキストをPRとして提出",
+		Long: `現在のコンテキストの変更をPRとして作成します。
+未プッシュの変更は自動的にプッシュされます。`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !gh.HasGH() {
+				return fmt.Errorf("gh CLI is not installed")
+			}
+
+			repoPath, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			v, err := vcs.NewAuto(repoPath)
+			if err != nil {
+				return err
+			}
+
+			current, err := v.CurrentContext()
+			if err != nil {
+				return fmt.Errorf("not in a dcell context: %w", err)
+			}
+
+			client, err := gh.New()
+			if err != nil {
+				return err
+			}
+
+			// Check if PR already exists
+			existingPR, _ := client.GetPRForBranch(current.Name)
+			if existingPR != nil {
+				fmt.Printf("PR #%d が既に存在します: %s\n", existingPR.Number, existingPR.URL)
+				fmt.Println("ブラウザで開きますか？ [Y/n]")
+				var resp string
+				fmt.Scanln(&resp)
+				if resp == "" || strings.ToLower(resp) == "y" {
+					return client.ViewPR(existingPR.Number)
+				}
+				return nil
+			}
+
+			// Generate PR title from branch name
+			title := generatePRTitle(current.Name)
+
+			if !yes {
+				fmt.Printf("以下の内容でPRを作成します:\n")
+				fmt.Printf("  ブランチ: %s\n", current.Name)
+				fmt.Printf("  タイトル: %s\n", title)
+				fmt.Println()
+				fmt.Print("作成しますか？ [Y/n/d(ドラフト)] ")
+				var resp string
+				fmt.Scanln(&resp)
+
+				resp = strings.ToLower(resp)
+				if resp == "n" {
+					fmt.Println("キャンセルしました")
+					return nil
+				}
+
+				draft := resp == "d"
+
+				fmt.Println("Pushing to origin...")
+				pushCmd := exec.Command("git", "push", "-u", "origin", current.Name)
+				pushCmd.Dir = current.Path
+				if out, err := pushCmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed to push: %w\n%s", err, out)
+				}
+
+				fmt.Println("Creating PR...")
+				if err := client.CreatePR(title, "", draft); err != nil {
+					return fmt.Errorf("failed to create PR: %w", err)
+				}
+
+				fmt.Println("✅ PRを作成しました")
+
+				// Get created PR URL
+				newPR, _ := client.GetPRForBranch(current.Name)
+				if newPR != nil {
+					fmt.Printf("   %s\n", newPR.URL)
+				}
+			} else {
+				// Auto mode
+				fmt.Println("Pushing to origin...")
+				pushCmd := exec.Command("git", "push", "-u", "origin", current.Name)
+				pushCmd.Dir = current.Path
+				if out, err := pushCmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed to push: %w\n%s", err, out)
+				}
+
+				fmt.Println("Creating PR...")
+				if err := client.CreatePR(title, "", false); err != nil {
+					return fmt.Errorf("failed to create PR: %w", err)
+				}
+				fmt.Println("✅ PRを作成しました")
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "確認をスキップ")
+
+	return cmd
+}
+
+func generatePRTitle(branch string) string {
+	// Convert branch name to PR title
+	// feat/user-auth -> feat: user auth
+	// fix/login-bug -> fix: login bug
+	
+	parts := strings.SplitN(branch, "/", 2)
+	if len(parts) == 2 {
+		prefix := parts[0]
+		desc := strings.ReplaceAll(parts[1], "-", " ")
+		desc = strings.ReplaceAll(desc, "_", " ")
+		return fmt.Sprintf("%s: %s", prefix, desc)
+	}
+	
+	return strings.ReplaceAll(branch, "-", " ")
 }
