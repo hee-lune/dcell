@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/heelune/dcell/internal/hooks"
 )
 
 // Config represents the dcell configuration.
@@ -14,13 +15,13 @@ type Config struct {
 	VCS    VCSConfig    `toml:"vcs"`
 	Docker DockerConfig `toml:"docker"`
 	AI     AIConfig     `toml:"ai"`
-	Hooks  HooksConfig  `toml:"hooks"`
+	Hooks  hooks.Config `toml:"hooks"`
 }
 
 // VCSConfig holds version control settings.
 type VCSConfig struct {
-	Prefer         string `toml:"prefer"`          // "jj" or "git"
-	DefaultBranch  string `toml:"default_branch"`  // default: "main"
+	Prefer        string `toml:"prefer"`         // "jj" or "git"
+	DefaultBranch string `toml:"default_branch"` // default: "main"
 }
 
 // DockerConfig holds Docker settings.
@@ -33,14 +34,6 @@ type DockerConfig struct {
 // AIConfig holds AI assistant settings.
 type AIConfig struct {
 	Default string `toml:"default"` // "claude", "kimi", or "codex"
-}
-
-// HooksConfig holds lifecycle hooks.
-type HooksConfig struct {
-	PostCreate []string `toml:"post-create"`
-	PreSwitch  []string `toml:"pre-switch"`
-	PostSwitch []string `toml:"post-switch"`
-	PreRemove  []string `toml:"pre-remove"`
 }
 
 // Default returns the default configuration.
@@ -58,7 +51,7 @@ func Default() *Config {
 		AI: AIConfig{
 			Default: "claude",
 		},
-		Hooks: HooksConfig{},
+		Hooks: hooks.Config{},
 	}
 }
 

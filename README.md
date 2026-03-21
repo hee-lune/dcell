@@ -7,6 +7,7 @@
 - **AIセッション** - コンテキスト認識型AIアシスタント連携
 - **Dev Container** - VS Code Dev Container対応
 - **スナップショット** - DBとファイルの状態保存・復元
+- **Hooks** - ワークツリー作成時の自動処理
 
 ## インストール
 
@@ -120,6 +121,45 @@ default = "claude"  # "claude" または "kimi"
 ### プロジェクト設定: `.dcell/config.toml`
 
 プロジェクト固有の設定を上書きできます。
+
+### Hooks設定
+
+ワークツリー作成時に自動実行される処理を設定できます。
+
+```toml
+[[hooks.post-create]]
+type = "copy"
+from = ".env"
+to = ".env"
+condition = "exists"
+description = ".envファイルをコピー"
+
+[[hooks.post-create]]
+type = "symlink"
+from = "node_modules"
+to = "node_modules"
+
+[[hooks.post-create]]
+type = "command"
+command = "npm install"
+description = "依存関係のインストール"
+
+[[hooks.post-create]]
+type = "template"
+from = "templates/default.md"
+to = ".dcell-session/context.md"
+```
+
+**アクションタイプ:**
+- `copy` - ファイル/ディレクトリをコピー
+- `symlink` - シンボリックリンクを作成
+- `command` - シェルコマンドを実行
+- `template` - Goテンプレートをレンダリング（変数: `{{ .ContextName }}`, `{{ .BaseBranch }}`, `{{ .VCS }}`）
+
+**条件 (`condition`):**
+- `exists` - ソースが存在する場合のみ（デフォルト）
+- `missing` - 出力先が存在しない場合のみ
+- `always` - 常に実行
 
 ## コマンド一覧
 

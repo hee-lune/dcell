@@ -10,6 +10,7 @@ import (
 	"github.com/heelune/dcell/internal/config"
 	"github.com/heelune/dcell/internal/devcontainer"
 	"github.com/heelune/dcell/internal/docker"
+	"github.com/heelune/dcell/internal/hooks"
 	"github.com/heelune/dcell/internal/session"
 	"github.com/heelune/dcell/internal/vcs"
 )
@@ -126,6 +127,21 @@ func createCmd() *cobra.Command {
 			store := session.NewStore(projectRoot)
 			if _, err := store.Create(ctxName, ctx.VCS, ctx.Path); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Session creation failed: %v\n", err)
+			}
+
+			// Run post-create hooks
+			if len(cfg.Hooks.PostCreate) > 0 {
+				hookCtx := &hooks.Context{
+					ProjectRoot:  projectRoot,
+					WorktreePath: ctx.Path,
+					ContextName:  ctxName,
+					BaseBranch:   from,
+					VCS:          ctx.VCS,
+				}
+				runner := hooks.NewRunner(hookCtx)
+				if err := runner.ExecutePostCreate(cfg.Hooks.PostCreate); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Post-create hooks failed: %v\n", err)
+				}
 			}
 
 			fmt.Printf("コンテキスト '%s' の準備ができました！\n", ctxName)
