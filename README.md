@@ -59,6 +59,19 @@ dcell remove feature-x
 dcell remove feature-x --force
 ```
 
+### ワンライナー開発ワークフロー
+
+```bash
+# 作成→AI起動→IDE起動を一発で
+dcell work feature-x "バグ修正"
+
+# IDEも同時に開く
+dcell work feature-x "ユーザ認証実装" --open cursor
+
+# ベースブランチ指定
+dcell work feature-x "リファクタリング" --from develop
+```
+
 ## ディレクトリ構造
 
 ```
