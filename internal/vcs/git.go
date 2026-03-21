@@ -84,6 +84,7 @@ func (g *Git) DetectBare(startPath string) (string, error) {
 }
 
 // CreateContext creates a new git worktree with a new branch.
+// If the branch already exists, checks out the existing branch instead.
 func (g *Git) CreateContext(name string, base string) (*Context, error) {
 	if g.RepoPath == "" {
 		return nil, fmt.Errorf("repository not detected")
@@ -97,8 +98,17 @@ func (g *Git) CreateContext(name string, base string) (*Context, error) {
 		base = "HEAD"
 	}
 
-	// Create new branch and worktree: git worktree add -b <name> <path> <base>
-	cmd := exec.Command("git", "worktree", "add", "-b", name, ctxPath, base)
+	// Check if branch already exists
+	branchExists := g.branchExists(name)
+
+	var cmd *exec.Cmd
+	if branchExists {
+		// Checkout existing branch
+		cmd = exec.Command("git", "worktree", "add", ctxPath, name)
+	} else {
+		// Create new branch and worktree
+		cmd = exec.Command("git", "worktree", "add", "-b", name, ctxPath, base)
+	}
 	cmd.Dir = g.RepoPath
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("failed to create git worktree: %w\n%s", err, out)
@@ -110,6 +120,13 @@ func (g *Git) CreateContext(name string, base string) (*Context, error) {
 		BaseBranch: base,
 		VCS:        "git",
 	}, nil
+}
+
+// branchExists checks if a branch exists in the repository.
+func (g *Git) branchExists(name string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+name)
+	cmd.Dir = g.RepoPath
+	return cmd.Run() == nil
 }
 
 // SwitchContext switches to an existing worktree.
