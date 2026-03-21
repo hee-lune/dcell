@@ -115,6 +115,13 @@ func migrateCmd() *cobra.Command {
 				return fmt.Errorf(".git/ の移動に失敗しました: %w", err)
 			}
 
+			// Create .git file in project root to point to .bare
+			gitFilePath := filepath.Join(currentDir, ".git")
+			if err := os.WriteFile(gitFilePath, []byte("gitdir: ./.bare\n"), 0644); err != nil {
+				rollbackMigrate(currentDir, tempDir, "")
+				return fmt.Errorf(".gitファイルの作成に失敗しました: %w", err)
+			}
+
 			// Create worktree directory with current branch name
 			worktreePath := filepath.Join(currentDir, currentBranch)
 			fmt.Printf("%s/ ディレクトリを作成中...\n", currentBranch)

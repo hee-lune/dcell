@@ -103,6 +103,12 @@ func initCmd() *cobra.Command {
 
 			fmt.Printf("%s リポジトリを作成しました\n", vcsType)
 
+			// Create .git file in project root to point to .bare
+			gitFilePath := filepath.Join(absProjectDir, ".git")
+			if err := os.WriteFile(gitFilePath, []byte("gitdir: ./.bare\n"), 0644); err != nil {
+				fmt.Fprintf(os.Stderr, "警告: .gitファイルの作成に失敗しました: %v\n", err)
+			}
+
 			// Create dcell config in project root
 			cfg := config.Default()
 			cfg.VCS.Prefer = vcsType
