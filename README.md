@@ -45,8 +45,15 @@ dcell list
 dcell switch feature-x
 cd ../feature-x  # フラット構造: main/ と同じ階層
 
-# AIアシスタントを起動
+# AIアシスタントを起動（ワークツリー内）
 dcell ai
+
+# プロジェクトルートでMaster AIを起動
+cd my-project
+dcell ai
+
+# 特定のコンテキストを指定
+dcell ai feature-x
 
 # Docker環境を起動（自動的にdcellのポート設定が適用される）
 dcell compose up -d
@@ -96,6 +103,8 @@ my-project/
 
 ### AIセッション管理
 
+- **Master AI** - プロジェクトルートで起動。コンテキスト管理・PR指揮
+- **ワークAI** - 各worktreeで起動。実際のコード編集
 - コンテキストごとのセッション保存
 - `context.md`, `todo.md`, `decisions.md` 自動作成
 - Claude Code / Kimi CLI 対応
@@ -121,7 +130,8 @@ port_step = 10
 services = ["app", "db", "redis"]
 
 [ai]
-default = "claude"  # "claude" または "kimi"
+default = "claude"           # "claude" または "kimi"
+default_context = "main"     # プロジェクトルートで `dcell ai` した時に開くコンテキスト（空=Master AI）
 ```
 
 ### プロジェクト設定: `.dcell/config.toml`

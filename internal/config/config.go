@@ -33,7 +33,8 @@ type DockerConfig struct {
 
 // AIConfig holds AI assistant settings.
 type AIConfig struct {
-	Default string `toml:"default"` // "claude", "kimi", or "codex"
+	Default         string `toml:"default"`          // "claude", "kimi", or "codex"
+	DefaultContext  string `toml:"default_context"`  // default context to open when in project root
 }
 
 // Default returns the default configuration.
@@ -134,6 +135,9 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.AI.Default != "" {
 		c.AI.Default = other.AI.Default
+	}
+	if other.AI.DefaultContext != "" {
+		c.AI.DefaultContext = other.AI.DefaultContext
 	}
 	if len(other.Hooks.PostCreate) > 0 {
 		c.Hooks.PostCreate = other.Hooks.PostCreate

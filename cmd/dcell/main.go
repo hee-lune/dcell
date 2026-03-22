@@ -545,51 +545,79 @@ func removeCmd() *cobra.Command {
 
 func aiCmd() *cobra.Command {
 	var aiType string
+	var masterFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "ai [context-name]",
 		Short: "AIアシスタントを起動",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `AIアシスタントを起動します。
+
+引数なしで実行した場合:
+  - ワークツリー内: そのコンテキストでAIを起動
+  - プロジェクトルート: Master AIを起動（または default_context でワークAIを起動）
+
+プロジェクトルートでマスターAIを使いたくない場合:
+  dcell ai <context-name>  # 特定のコンテキストを指定`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repoPath, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			// Determine context name and detect repository first
-			var ctxName string
-			var v vcs.VCS
-			if len(args) > 0 {
-				ctxName = args[0]
-				// Context specified, but still try to detect repo for project root
-				v, _ = vcs.NewAuto(repoPath)
-			} else {
-				// Try to get current context from directory
-				var err error
-				v, err = vcs.NewAuto(repoPath)
-				if err != nil {
-					return fmt.Errorf("no context specified and not in a dcell: %w", err)
-				}
-				current, err := v.CurrentContext()
-				if err != nil {
-					return fmt.Errorf("no context specified and not in a dcell: %w", err)
-				}
-				ctxName = current.Name
-			}
+			// Check if we're in project root
+			isProjectRoot := session.IsProjectRoot(repoPath)
 
-			// Get project root for config loading
-			projectRoot := getProjectRoot(v)
+			// Detect VCS
+			v, vcsErr := vcs.NewAuto(repoPath)
+
+			// Get project root
+			var projectRoot string
+			if vcsErr == nil {
+				projectRoot = getProjectRoot(v)
+			}
 			if projectRoot == "" {
 				projectRoot = repoPath
 			}
 
-			// Load config from project root (works from any worktree)
+			// Load config
 			cfg, err := loadConfigForPath(projectRoot)
 			if err != nil {
 				return err
 			}
 
-			// Get AI
+			// Determine what to do
+			var ctxName string
+			var isMasterMode bool
+
+			if len(args) > 0 {
+				// Context explicitly specified
+				ctxName = args[0]
+				isMasterMode = false
+			} else if masterFlag {
+				// --master flag explicitly set
+				isMasterMode = true
+			} else if isProjectRoot && cfg.AI.DefaultContext == "" {
+				// In project root without default_context -> Master AI
+				isMasterMode = true
+			} else if isProjectRoot && cfg.AI.DefaultContext != "" {
+				// In project root with default_context -> open that context
+				ctxName = cfg.AI.DefaultContext
+				isMasterMode = false
+			} else {
+				// Try to get current context from directory
+				if vcsErr != nil {
+					return fmt.Errorf("no context specified and not in a dcell: %w", vcsErr)
+				}
+				current, err := v.CurrentContext()
+				if err != nil {
+					return fmt.Errorf("no context specified and not in a dcell context: %w", err)
+				}
+				ctxName = current.Name
+				isMasterMode = false
+			}
+
+			// Get AI type
 			if aiType == "" {
 				aiType = cfg.AI.Default
 			}
@@ -602,43 +630,103 @@ func aiCmd() *cobra.Command {
 				}
 			}
 
-			// Get context path (flat structure: directly under project root)
-			ctxPath := filepath.Join(projectRoot, ctxName)
-
-			// Load or create session
-			store := session.NewStore(projectRoot)
-			sess, err := store.Load(ctxName)
-			if err != nil {
-				// Session doesn't exist, create it
-				fmt.Printf("セッション '%s' を新規作成します...\n", ctxName)
-				sess, err = store.Create(ctxName, v.Name(), ctxPath)
-				if err != nil {
-					return fmt.Errorf("failed to create session: %w", err)
-				}
+			// Master AI mode
+			if isMasterMode {
+				return startMasterAI(projectRoot, ai, v)
 			}
 
-			// Create AGENTS.md for AI assistant
-			if err := store.CreateAGENTSMD(ctxPath, ctxName); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
-			}
-
-			// Create context loader for layered context
-			globalDir := filepath.Dir(config.GlobalConfigPath())
-			loader := session.NewContextLoader(
-				globalDir,                      // Global: ~/.config/dcell/
-				projectRoot,                    // Project: dcell/
-				filepath.Dir(sess.ContextPath), // Session: .dcell-session/
-			)
-
-			fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
-
-			return ai.Start(ctxPath, sess, loader)
+			// Normal worktree AI mode
+			return startWorktreeAI(projectRoot, ctxName, ai, v)
 		},
 	}
 
 	cmd.Flags().StringVar(&aiType, "type", "", "AIタイプ (claude または kimi)")
+	cmd.Flags().BoolVar(&masterFlag, "master", false, "強制的にMaster AIを起動")
 
 	return cmd
+}
+
+// startMasterAI starts the master AI for project management.
+func startMasterAI(projectRoot string, ai session.AI, v vcs.VCS) error {
+	// Initialize master context if needed
+	vcsType := "git"
+	if v != nil {
+		vcsType = v.Name()
+	}
+	
+	if err := session.InitMaster(projectRoot, vcsType); err != nil {
+		return fmt.Errorf("failed to initialize master context: %w", err)
+	}
+
+	masterSession := session.GetMasterSession(projectRoot)
+
+	fmt.Printf("🎯 Master AI を起動中...\n")
+	fmt.Printf("   プロジェクト: %s\n", filepath.Base(projectRoot))
+	fmt.Printf("   AI: %s\n", ai.Name())
+	fmt.Println()
+	fmt.Println("💡 ヒント: 'dcell ai <context-name>' でワークAIを起動")
+	fmt.Println()
+
+	// Create context loader for master (Global -> Project -> Master)
+	globalDir := filepath.Dir(config.GlobalConfigPath())
+	masterCtxDir := filepath.Dir(masterSession.ContextPath)
+	loader := session.NewContextLoader(globalDir, projectRoot, masterCtxDir)
+
+	// Create a pseudo-session for the master
+	sess := &session.Session{
+		ContextName: session.MasterContextName,
+		ContextPath: masterSession.ContextPath,
+	}
+
+	return ai.Start(projectRoot, sess, loader)
+}
+
+// startWorktreeAI starts AI in a specific worktree context.
+func startWorktreeAI(projectRoot, ctxName string, ai session.AI, v vcs.VCS) error {
+	ctxPath := filepath.Join(projectRoot, ctxName)
+
+	// Check if context exists
+	if _, err := os.Stat(ctxPath); os.IsNotExist(err) {
+		// Show available contexts
+		contexts, _ := session.ListContexts(projectRoot)
+		if contexts != "" {
+			fmt.Println(contexts)
+		}
+		return fmt.Errorf("context '%s' not found at %s", ctxName, ctxPath)
+	}
+
+	// Load or create session
+	store := session.NewStore(projectRoot)
+	sess, err := store.Load(ctxName)
+	if err != nil {
+		// Session doesn't exist, create it
+		fmt.Printf("セッション '%s' を新規作成します...\n", ctxName)
+		vcsType := "git"
+		if v != nil {
+			vcsType = v.Name()
+		}
+		sess, err = store.Create(ctxName, vcsType, ctxPath)
+		if err != nil {
+			return fmt.Errorf("failed to create session: %w", err)
+		}
+	}
+
+	// Create AGENTS.md for AI assistant
+	if err := store.CreateAGENTSMD(ctxPath, ctxName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
+	}
+
+	// Create context loader for layered context
+	globalDir := filepath.Dir(config.GlobalConfigPath())
+	loader := session.NewContextLoader(
+		globalDir,                      // Global: ~/.config/dcell/
+		projectRoot,                    // Project: dcell/
+		filepath.Dir(sess.ContextPath), // Session: .dcell-session/
+	)
+
+	fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
+
+	return ai.Start(ctxPath, sess, loader)
 }
 
 // getProjectRoot returns the project root path (parent of .bare directory)
