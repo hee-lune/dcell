@@ -259,6 +259,8 @@ func addAllCommands() {
 	rootCmd.AddCommand(aiCmd())
 	rootCmd.AddCommand(prCmd())
 	rootCmd.AddCommand(submitCmd())
+	rootCmd.AddCommand(recipeCmd())
+	rootCmd.AddCommand(cookCmd())
 	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(devcontainerCmd())
 	rootCmd.AddCommand(snapshotCmd())
