@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/heelune/dcell/internal/config"
 	"github.com/heelune/dcell/internal/devcontainer"
 	"github.com/heelune/dcell/internal/docker"
@@ -18,9 +20,36 @@ import (
 	"github.com/heelune/dcell/internal/vcs"
 )
 
+// JSONHelp represents command help information in JSON format
+type JSONHelp struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Usage       string     `json:"usage"`
+	Args        []ArgInfo  `json:"args"`
+	Flags       []FlagInfo `json:"flags"`
+	Subcommands []JSONHelp `json:"subcommands"`
+}
+
+// ArgInfo represents argument information
+type ArgInfo struct {
+	Name        string `json:"name"`
+	Required    bool   `json:"required"`
+	Description string `json:"description"`
+}
+
+// FlagInfo represents flag information
+type FlagInfo struct {
+	Name        string `json:"name"`
+	Short       string `json:"short"`
+	Type        string `json:"type"`
+	Default     string `json:"default"`
+	Description string `json:"description"`
+}
+
 var (
-	cfgFile string
-	rootCmd = &cobra.Command{
+	cfgFile    string
+	jsonOutput bool
+	rootCmd    = &cobra.Command{
 		Use:   "dcell",
 		Short: "開発コンテキスト管理ツール",
 		Long: `dcell は開発コンテキスト（Development Cell）を管理するツールです：
@@ -29,6 +58,166 @@ var (
 - AIアシスタントとのセッション管理`,
 	}
 )
+
+// outputJSONHelp outputs command help information in JSON format
+func outputJSONHelp(cmd *cobra.Command) {
+	help := buildJSONHelp(cmd)
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	encoder.Encode(help)
+}
+
+// buildJSONHelp recursively builds JSON help structure
+func buildJSONHelp(cmd *cobra.Command) JSONHelp {
+	help := JSONHelp{
+		Name:        cmd.Name(),
+		Description: cmd.Short,
+		Usage:       cmd.UseLine(),
+		Args:        parseArgs(cmd.Use),
+		Flags:       []FlagInfo{},
+		Subcommands: []JSONHelp{},
+	}
+
+	// Collect flags
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		// Skip json and help flags
+		if f.Name == "json" || f.Name == "help" {
+			return
+		}
+		flagInfo := FlagInfo{
+			Name:        f.Name,
+			Description: f.Usage,
+		}
+		if f.Shorthand != "" {
+			flagInfo.Short = f.Shorthand
+		}
+		flagInfo.Type = getFlagType(f)
+		if f.DefValue != "" {
+			flagInfo.Default = f.DefValue
+		}
+		help.Flags = append(help.Flags, flagInfo)
+	})
+
+	// Collect persistent flags from parent if this is not root
+	if cmd.Parent() != nil {
+		cmd.Parent().PersistentFlags().VisitAll(func(f *pflag.Flag) {
+			// Skip json and help flags
+			if f.Name == "json" || f.Name == "help" {
+				return
+			}
+			// Check if already added
+			found := false
+			for _, existing := range help.Flags {
+				if existing.Name == f.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				flagInfo := FlagInfo{
+					Name:        f.Name,
+					Description: f.Usage,
+				}
+				if f.Shorthand != "" {
+					flagInfo.Short = f.Shorthand
+				}
+				flagInfo.Type = getFlagType(f)
+				if f.DefValue != "" {
+					flagInfo.Default = f.DefValue
+				}
+				help.Flags = append(help.Flags, flagInfo)
+			}
+		})
+	}
+
+	// Collect subcommands
+	for _, sub := range cmd.Commands() {
+		if !sub.Hidden {
+			help.Subcommands = append(help.Subcommands, buildJSONHelp(sub))
+		}
+	}
+
+	return help
+}
+
+// getFlagType determines the type of a flag
+func getFlagType(f *pflag.Flag) string {
+	// Try to determine type from value type
+	if f.Value != nil {
+		typeStr := fmt.Sprintf("%T", f.Value)
+		switch {
+		case strings.Contains(typeStr, "bool"):
+			return "bool"
+		case strings.Contains(typeStr, "int") && !strings.Contains(typeStr, "string"):
+			return "int"
+		case strings.Contains(typeStr, "stringArray") || strings.Contains(typeStr, "stringSlice"):
+			return "array"
+		default:
+			return "string"
+		}
+	}
+	return "string"
+}
+
+// parseArgs parses arguments from Use string
+func parseArgs(use string) []ArgInfo {
+	args := []ArgInfo{}
+
+	// Extract argument parts from Use string
+	// Format: "command <arg1> [arg2]"
+	parts := strings.Fields(use)
+	if len(parts) <= 1 {
+		return args
+	}
+
+	for i, part := range parts[1:] {
+		if !strings.HasPrefix(part, "<") && !strings.HasPrefix(part, "[") {
+			continue
+		}
+
+		// Clean up brackets
+		name := part
+		required := strings.HasPrefix(part, "<")
+
+		name = strings.TrimPrefix(name, "<")
+		name = strings.TrimPrefix(name, "[")
+		name = strings.TrimSuffix(name, ">")
+		name = strings.TrimSuffix(name, "]")
+		name = strings.TrimSuffix(name, "...")
+
+		// Extract just the argument name (remove type hints like :string)
+		if idx := strings.Index(name, ":"); idx != -1 {
+			name = name[:idx]
+		}
+
+		arg := ArgInfo{
+			Name:     name,
+			Required: required,
+		}
+
+		// Add description based on common argument names
+		switch name {
+		case "name":
+			arg.Description = "コンテキスト名"
+		case "prompt":
+			arg.Description = "AIプロンプト"
+		case "directory":
+			arg.Description = "プロジェクトディレクトリ名"
+		case "number":
+			arg.Description = "PR番号"
+		default:
+			if i == 0 {
+				arg.Description = "引数"
+			} else {
+				arg.Description = "オプション引数"
+			}
+		}
+
+		args = append(args, arg)
+	}
+
+	return args
+}
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -39,7 +228,27 @@ func main() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "設定ファイル（デフォルト: $HOME/.config/dcell/config.toml）")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "ヘルプ情報をJSON形式で出力")
 
+	// Set custom help function that checks for --json flag
+	rootCmd.SetHelpFunc(customHelpFunc)
+
+	addAllCommands()
+}
+
+// customHelpFunc outputs help in JSON format if --json flag is set
+func customHelpFunc(cmd *cobra.Command, args []string) {
+	// Check if --json flag is set
+	if jsonOutput {
+		outputJSONHelp(cmd)
+		return
+	}
+
+	// Default help output
+	cmd.Usage()
+}
+
+func addAllCommands() {
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(createCmd())
@@ -58,8 +267,8 @@ func init() {
 
 func createCmd() *cobra.Command {
 	var (
-		from        string
-		vcsType     string
+		from             string
+		vcsType          string
 		devcontainerFlag bool
 	)
 
@@ -69,7 +278,7 @@ func createCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctxName := args[0]
-			
+
 			// Load config
 			cfg, err := loadConfig()
 			if err != nil {
@@ -165,7 +374,6 @@ func createCmd() *cobra.Command {
 	return cmd
 }
 
-
 func listCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
@@ -216,13 +424,13 @@ func listCmd() *cobra.Command {
 			fmt.Printf("開発コンテキスト一覧 (%s):\n\n", v.Name())
 			fmt.Printf("%-18s %-10s %-8s %-30s\n", "CONTEXT", "TMUX", "PR", "TITLE")
 			fmt.Println(strings.Repeat("-", 70))
-			
+
 			for _, ctx := range contexts {
 				prefix := "  "
 				if current != nil && ctx.Name == current.Name {
 					prefix = "* "
 				}
-				
+
 				session, hasTmux := tmuxSessions[ctx.Name]
 				var tmuxStatus string
 				if hasTmux {
@@ -246,7 +454,7 @@ func listCmd() *cobra.Command {
 					prNum = "-"
 					prTitle = ""
 				}
-				
+
 				fmt.Printf("%s%-16s %-10s %-8s %s\n", prefix, ctx.Name, tmuxStatus, prNum, prTitle)
 			}
 			fmt.Println()
@@ -384,7 +592,7 @@ func aiCmd() *cobra.Command {
 			if aiType == "" {
 				aiType = cfg.AI.Default
 			}
-			
+
 			ai, err := session.GetAI(aiType)
 			if err != nil {
 				ai, err = session.DetectAI()
@@ -392,10 +600,10 @@ func aiCmd() *cobra.Command {
 					return err
 				}
 			}
-			
+
 			// Get context path (flat structure: directly under project root)
 			ctxPath := filepath.Join(projectRoot, ctxName)
-			
+
 			// Load or create session
 			store := session.NewStore(projectRoot)
 			sess, err := store.Load(ctxName)
@@ -407,22 +615,22 @@ func aiCmd() *cobra.Command {
 					return fmt.Errorf("failed to create session: %w", err)
 				}
 			}
-			
+
 			// Create AGENTS.md for AI assistant
 			if err := store.CreateAGENTSMD(ctxPath, ctxName); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to create AGENTS.md: %v\n", err)
 			}
-			
+
 			// Create context loader for layered context
 			globalDir := filepath.Dir(config.GlobalConfigPath())
 			loader := session.NewContextLoader(
-				globalDir,                  // Global: ~/.config/dcell/
-				projectRoot,                // Project: dcell/
+				globalDir,                      // Global: ~/.config/dcell/
+				projectRoot,                    // Project: dcell/
 				filepath.Dir(sess.ContextPath), // Session: .dcell-session/
 			)
-			
+
 			fmt.Printf("%s をコンテキスト '%s' で起動中...\n", ai.Name(), ctxName)
-			
+
 			return ai.Start(ctxPath, sess, loader)
 		},
 	}
@@ -934,7 +1142,7 @@ func generatePRTitle(branch string) string {
 	// Convert branch name to PR title
 	// feat/user-auth -> feat: user auth
 	// fix/login-bug -> fix: login bug
-	
+
 	parts := strings.SplitN(branch, "/", 2)
 	if len(parts) == 2 {
 		prefix := parts[0]
@@ -942,6 +1150,8 @@ func generatePRTitle(branch string) string {
 		desc = strings.ReplaceAll(desc, "_", " ")
 		return fmt.Sprintf("%s: %s", prefix, desc)
 	}
-	
+
 	return strings.ReplaceAll(branch, "-", " ")
 }
+
+
