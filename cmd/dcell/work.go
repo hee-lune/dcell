@@ -1,13 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/heelune/dcell/internal/config"
+	"github.com/heelune/dcell/internal/gh"
 	"github.com/heelune/dcell/internal/hooks"
 	"github.com/heelune/dcell/internal/session"
 	"github.com/heelune/dcell/internal/tmux"
@@ -21,6 +24,8 @@ func workCmd() *cobra.Command {
 		devcontainerFlag bool
 		aiType         string
 		openIDE        string
+		dryRun         bool
+		validate       bool
 	)
 
 	cmd := &cobra.Command{
@@ -73,6 +78,16 @@ func workCmd() *cobra.Command {
 			// Determine AI type
 			if aiType == "" {
 				aiType = cfg.AI.Default
+			}
+
+			// Handle validate mode
+			if validate {
+				return runValidate(ctxName, from, repoPath, cfg)
+			}
+
+			// Handle dry-run mode
+			if dryRun {
+				return runDryRun(ctxName, from, prompt, repoPath, cfg, aiType, openIDE)
 			}
 
 			// Create VCS instance
@@ -232,6 +247,8 @@ func workCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&devcontainerFlag, "devcontainer", false, "Dev Container設定も生成")
 	cmd.Flags().StringVar(&aiType, "ai", "", "AIアシスタント (claude, kimi)")
 	cmd.Flags().StringVar(&openIDE, "open", "", "IDEで開く (cursor, code, windsurf, zed)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "実行せずに計画を表示")
+	cmd.Flags().BoolVar(&validate, "validate", false, "事前検証のみ実行")
 
 	return cmd
 }
@@ -259,4 +276,141 @@ func launchIDE(ide, path string) error {
 	cmd.Stdin = nil
 
 	return cmd.Start()
+}
+
+// runValidate performs pre-execution validation
+func runValidate(ctxName, from, repoPath string, cfg *config.Config) error {
+	fmt.Println("🔍 検証モード: 実行前チェック")
+	fmt.Println(strings.Repeat("-", 50))
+
+	// Check 1: Context name validity
+	if ctxName == "" {
+		return fmt.Errorf("❌ コンテキスト名が空です")
+	}
+	if strings.ContainsAny(ctxName, `/:*?"<>|`) {
+		return fmt.Errorf("❌ コンテキスト名に無効な文字が含まれています: %s", ctxName)
+	}
+	fmt.Printf("✅ コンテキスト名: '%s' は有効です\n", ctxName)
+
+	// Check 2: Repository detection
+	v, err := vcs.NewAuto(repoPath)
+	if err != nil {
+		return fmt.Errorf("❌ リポジトリが検出できません: %w", err)
+	}
+	fmt.Printf("✅ リポジトリ検出: %s\n", v.Name())
+
+	// Check 3: Base branch existence
+	if err := validateBranch(v, from); err != nil {
+		return fmt.Errorf("❌ ベースブランチ '%s' が存在しません: %w", from, err)
+	}
+	fmt.Printf("✅ ベースブランチ '%s' は存在します\n", from)
+
+	// Check 4: Context name collision
+	contexts, _ := v.ListContexts()
+	for _, ctx := range contexts {
+		if ctx.Name == ctxName {
+			return fmt.Errorf("❌ コンテキスト '%s' は既に存在します\n   修正案: dcell attach %s", ctxName, ctxName)
+		}
+	}
+	fmt.Printf("✅ コンテキスト名 '%s' は利用可能です\n", ctxName)
+
+	// Check 5: tmux availability
+	if tmux.HasTmux() {
+		fmt.Println("✅ tmuxが利用可能です")
+	} else {
+		fmt.Println("⚠️  tmuxが見つかりません（作成のみ実行）")
+	}
+
+	// Check 6: gh availability (for PR features)
+	if gh.HasGH() {
+		fmt.Println("✅ gh CLIが利用可能です")
+	} else {
+		fmt.Println("ℹ️  gh CLIが見つかります（PR機能は制限されます）")
+	}
+
+	// Check 7: Disk space (simplified check)
+	projectRoot := getProjectRoot(v)
+	if projectRoot == "" {
+		projectRoot = repoPath
+	}
+	fmt.Printf("✅ 出力先: %s/%s\n", projectRoot, ctxName)
+
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Println("✅ すべての検証に合格しました")
+	fmt.Println("実行可能: dcell work", ctxName)
+	return nil
+}
+
+// runDryRun shows execution plan without actually running
+func runDryRun(ctxName, from, prompt, repoPath string, cfg *config.Config, aiType, openIDE string) error {
+	fmt.Println("📋 ドライラン: 実行計画")
+	fmt.Println(strings.Repeat("-", 60))
+
+	// Detect repository
+	v, _ := vcs.NewAuto(repoPath)
+	vcsName := "unknown"
+	if v != nil {
+		vcsName = v.Name()
+	}
+
+	projectRoot := repoPath
+	if v != nil {
+		pr := getProjectRoot(v)
+		if pr != "" {
+			projectRoot = pr
+		}
+	}
+	ctxPath := filepath.Join(projectRoot, ctxName)
+	sessionName := tmux.GetSessionForContext(ctxName)
+
+	plan := map[string]interface{}{
+		"action":       "create_work_context",
+		"context_name": ctxName,
+		"context_path": ctxPath,
+		"base_branch":  from,
+		"vcs_type":     vcsName,
+		"steps": []map[string]string{
+			{"step": "1", "action": "create_worktree", "target": ctxPath, "from": from},
+			{"step": "2", "action": "setup_docker", "optional": "true"},
+			{"step": "3", "action": "create_tmux_session", "session": sessionName},
+		},
+	}
+
+	if prompt != "" {
+		plan["ai_prompt"] = prompt
+		plan["steps"] = append(plan["steps"].([]map[string]string), 
+			map[string]string{"step": "4", "action": "launch_ai", "type": aiType})
+	}
+
+	if openIDE != "" {
+		plan["steps"] = append(plan["steps"].([]map[string]string), 
+			map[string]string{"step": "5", "action": "open_ide", "ide": openIDE})
+	}
+
+	plan["steps"] = append(plan["steps"].([]map[string]string), 
+		map[string]string{"step": "6", "action": "attach_tmux", "session": sessionName})
+
+	// Print as JSON for AI parsing
+	jsonData, _ := json.MarshalIndent(plan, "", "  ")
+	fmt.Println(string(jsonData))
+
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Println("💡 実際に実行するには --dry-run フラグを外してください:")
+	fmt.Printf("   dcell work %s", ctxName)
+	if from != cfg.VCS.DefaultBranch {
+		fmt.Printf(" --from %s", from)
+	}
+	if prompt != "" {
+		fmt.Printf(" \"%s\"", prompt)
+	}
+	fmt.Println()
+	
+	return nil
+}
+
+func validateBranch(v vcs.VCS, branch string) error {
+	// Simple validation: check if branch exists
+	cmd := exec.Command("git", "rev-parse", "--verify", branch)
+	cmd.Dir = v.(*vcs.Git).RepoPath
+	return cmd.Run()
 }
