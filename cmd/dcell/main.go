@@ -263,7 +263,6 @@ func addAllCommands() {
 	rootCmd.AddCommand(cookCmd())
 	rootCmd.AddCommand(contextCmd())
 	rootCmd.AddCommand(devcontainerCmd())
-	rootCmd.AddCommand(snapshotCmd())
 	rootCmd.AddCommand(composeCmd())
 }
 

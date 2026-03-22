@@ -6,7 +6,6 @@
 - **Docker環境** - ポート自動割り当て、分離されたサービス
 - **AIセッション** - コンテキスト認識型AIアシスタント連携
 - **Dev Container** - VS Code Dev Container対応
-- **スナップショット** - DBとファイルの状態保存・復元
 - **Hooks** - ワークツリー作成時の自動処理
 
 ## インストール
@@ -107,12 +106,6 @@ my-project/
 - worktreeごとに独立したDev Container設定
 - VS Codeでの「コンテナで再度開く」対応
 
-### スナップショット機能
-
-- DB状態の保存・復元（PostgreSQL対応）
-- ファイル変更の保存・復元
-- ブランチ・コミット情報の記録
-
 ## 設定
 
 ### グローバル設定: `~/.config/dcell/config.toml`
@@ -187,7 +180,6 @@ to = ".dcell-session/context.md"
 | `compose [args]` | docker compose のラッパー（dcell設定自動適用）|
 | `ai [name]` | AIアシスタントを起動 |
 | `devcontainer` | Dev Container設定の管理 |
-| `snapshot` | スナップショットの管理 |
 
 ### init コマンド
 
